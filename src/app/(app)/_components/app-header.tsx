@@ -8,11 +8,7 @@ export function AppHeader({ member }: { member: CurrentMember }) {
   return (
     <header className="sticky top-0 z-10 border-b border-neutral-200 bg-white/95 backdrop-blur">
       <div className="relative mx-auto w-full max-w-3xl px-4 py-4">
-        <Link
-          href="/"
-          aria-label="HFC Board Voting — dashboard"
-          className="block"
-        >
+        <Link href="/" aria-label="HFC Board Voting — dashboard" className="block">
           <Image
             src="/hfc-logo.png"
             alt="Harrison Faith Church"
