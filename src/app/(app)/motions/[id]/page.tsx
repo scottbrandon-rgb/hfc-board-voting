@@ -7,6 +7,7 @@ import { buttonVariants } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { MotionActions } from './_components/motion-actions';
 import { VotingPanel } from './_components/voting-panel';
+import { ChairActions } from './_components/chair-actions';
 import { CommentForm } from './_components/comment-form';
 
 export const dynamic = 'force-dynamic';
@@ -193,6 +194,7 @@ export default async function MotionDetailPage({ params }: { params: Promise<{ i
   const isChair = member.role === 'chair';
   const hasAction = motion.status === 'open' || motion.status === 'moved';
   const hasVotingPanel = motion.status === 'seconded' || motion.status === 'voting';
+  const hasChairActions = ['decided_passed', 'decided_failed', 'decided_deferred', 'ratified'].includes(motion.status);
   const showVoteResults = ['decided_passed', 'decided_failed', 'decided_deferred', 'ratified'].includes(motion.status);
 
   return (
@@ -261,6 +263,31 @@ export default async function MotionDetailPage({ params }: { params: Promise<{ i
               myVote={myVote}
               tally={tally}
               totalVoters={totalVoters}
+            />
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ── Chair / outcome actions (decided / ratified) ────────────────── */}
+      {hasChairActions && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">
+              {motion.status === 'ratified'
+                ? 'Ratification'
+                : motion.status === 'decided_passed'
+                  ? isChair
+                    ? 'Ratify motion'
+                    : 'Outcome'
+                  : 'Outcome'}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ChairActions
+              motionId={motion.id}
+              status={motion.status}
+              isChair={isChair}
+              ratifiedByName={motion.ratified_by ? (memberMap[motion.ratified_by] ?? null) : null}
             />
           </CardContent>
         </Card>

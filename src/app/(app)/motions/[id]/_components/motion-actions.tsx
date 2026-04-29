@@ -2,7 +2,7 @@
 
 import { useActionState } from 'react';
 import { Button } from '@/components/ui/button';
-import { moveMotion, secondMotion, withdrawMotion, type ActionState } from '../actions';
+import { moveMotion, secondMotion, withdrawMotion, markDied, type ActionState } from '../actions';
 
 interface Props {
   motionId: string;
@@ -35,29 +35,66 @@ export function MotionActions({
     withdrawMotion.bind(null, motionId),
     initialState,
   );
+  const [diedState, diedAction, diedPending] = useActionState(
+    markDied.bind(null, motionId),
+    initialState,
+  );
 
-  const anyPending = movePending || secondPending || withdrawPending;
+  const anyPending = movePending || secondPending || withdrawPending || diedPending;
 
   const errorMsg =
     (moveState.status === 'error' && moveState.message) ||
     (secondState.status === 'error' && secondState.message) ||
     (withdrawState.status === 'error' && withdrawState.message) ||
+    (diedState.status === 'error' && diedState.message) ||
     null;
 
-  // ── Chair: never moves or seconds — just shows status context ───────────
+  // ── Chair: never moves or seconds — shows status + can mark as died ────────
   if (isChair) {
     if (status === 'open') {
       return (
-        <p className="text-muted-foreground text-sm">
-          Awaiting a board member to make a motion.
-        </p>
+        <div className="space-y-3">
+          <p className="text-muted-foreground text-sm">
+            Awaiting a board member to make a motion.
+          </p>
+          <form action={diedAction}>
+            <button
+              type="submit"
+              disabled={anyPending}
+              className="text-muted-foreground hover:text-destructive text-xs underline-offset-2 hover:underline disabled:opacity-50"
+            >
+              {diedPending ? 'Marking…' : 'Mark as died — no motion'}
+            </button>
+          </form>
+          {errorMsg && (
+            <p className="text-destructive text-sm" role="alert">
+              {errorMsg}
+            </p>
+          )}
+        </div>
       );
     }
     if (status === 'moved') {
       return (
-        <p className="text-muted-foreground text-sm">
-          Moved by {moverName ?? 'a member'}. Awaiting a second from another board member.
-        </p>
+        <div className="space-y-3">
+          <p className="text-muted-foreground text-sm">
+            Moved by {moverName ?? 'a member'}. Awaiting a second from another board member.
+          </p>
+          <form action={diedAction}>
+            <button
+              type="submit"
+              disabled={anyPending}
+              className="text-muted-foreground hover:text-destructive text-xs underline-offset-2 hover:underline disabled:opacity-50"
+            >
+              {diedPending ? 'Marking…' : 'Mark as died — no second'}
+            </button>
+          </form>
+          {errorMsg && (
+            <p className="text-destructive text-sm" role="alert">
+              {errorMsg}
+            </p>
+          )}
+        </div>
       );
     }
     return null;

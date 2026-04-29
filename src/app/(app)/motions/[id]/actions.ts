@@ -390,3 +390,90 @@ export async function postComment(
   revalidatePath(`/motions/${motionId}`);
   return { status: 'success' };
 }
+
+// ─── Ratify ───────────────────────────────────────────────────────────────────
+
+export async function ratifyMotion(
+  motionId: string,
+  _prev: ActionState,
+  _formData: FormData,
+): Promise<ActionState> {
+  const member = await requireChair();
+  const admin = createAdminClient();
+
+  const { data: motion } = await admin
+    .from('motions')
+    .select('id, status, motion_number')
+    .eq('id', motionId)
+    .maybeSingle();
+
+  if (!motion) return { status: 'error', message: 'Motion not found.' };
+  if (motion.status !== 'decided_passed')
+    return { status: 'error', message: 'Only a provisionally passed motion can be ratified.' };
+
+  const now = new Date().toISOString();
+  const { error } = await admin
+    .from('motions')
+    .update({ status: 'ratified', ratified_by: member.id, ratified_at: now })
+    .eq('id', motionId)
+    .eq('status', 'decided_passed');
+
+  if (error) return { status: 'error', message: `Could not ratify motion: ${error.message}` };
+
+  const ctx = await auditCtx();
+  await admin.from('audit_log').insert({
+    motion_id: motionId,
+    member_id: member.id,
+    event_type: 'ratified',
+    event_data: { motion_number: motion.motion_number },
+    ...ctx,
+  });
+
+  revalidatePath(`/motions/${motionId}`);
+  revalidatePath('/');
+  redirect(`/motions/${motionId}`);
+}
+
+// ─── Mark as died ─────────────────────────────────────────────────────────────
+
+export async function markDied(
+  motionId: string,
+  _prev: ActionState,
+  _formData: FormData,
+): Promise<ActionState> {
+  const member = await requireChair();
+  const admin = createAdminClient();
+
+  const { data: motion } = await admin
+    .from('motions')
+    .select('id, status, motion_number')
+    .eq('id', motionId)
+    .maybeSingle();
+
+  if (!motion) return { status: 'error', message: 'Motion not found.' };
+  if (!['open', 'moved'].includes(motion.status))
+    return { status: 'error', message: 'Motion cannot be marked as died in its current state.' };
+
+  const newStatus = motion.status === 'open' ? 'died_no_motion' : 'died_no_second';
+
+  const { error } = await admin
+    .from('motions')
+    .update({ status: newStatus })
+    .eq('id', motionId)
+    .eq('status', motion.status);
+
+  if (error) return { status: 'error', message: `Could not update motion: ${error.message}` };
+
+  const ctx = await auditCtx();
+  await admin.from('audit_log').insert({
+    motion_id: motionId,
+    member_id: member.id,
+    event_type: newStatus,
+    event_data: { motion_number: motion.motion_number },
+    ...ctx,
+  });
+
+  revalidatePath(`/motions/${motionId}`);
+  revalidatePath('/');
+  redirect(`/motions/${motionId}`);
+}
