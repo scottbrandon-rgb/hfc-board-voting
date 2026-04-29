@@ -36,6 +36,8 @@ export async function moveMotion(
     .eq('id', motionId)
     .maybeSingle();
 
+  if (member.role === 'chair')
+    return { status: 'error', message: 'The chair cannot make a motion.' };
   if (!motion) return { status: 'error', message: 'Motion not found.' };
   if (motion.status !== 'open')
     return {
@@ -82,6 +84,8 @@ export async function secondMotion(
     .eq('id', motionId)
     .maybeSingle();
 
+  if (member.role === 'chair')
+    return { status: 'error', message: 'The chair cannot second a motion.' };
   if (!motion) return { status: 'error', message: 'Motion not found.' };
   if (motion.status !== 'moved')
     return { status: 'error', message: 'Motion is not currently awaiting a second.' };

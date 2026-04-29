@@ -7,6 +7,7 @@ import { moveMotion, secondMotion, withdrawMotion, type ActionState } from '../a
 interface Props {
   motionId: string;
   status: string;
+  isChair: boolean;
   currentMemberId: string;
   movedById: string | null;
   moverName: string | null;
@@ -17,6 +18,7 @@ const initialState: ActionState = { status: 'idle' };
 export function MotionActions({
   motionId,
   status,
+  isChair,
   currentMemberId,
   movedById,
   moverName,
@@ -42,6 +44,26 @@ export function MotionActions({
     (withdrawState.status === 'error' && withdrawState.message) ||
     null;
 
+  // ── Chair: never moves or seconds — just shows status context ───────────
+  if (isChair) {
+    if (status === 'open') {
+      return (
+        <p className="text-muted-foreground text-sm">
+          Awaiting a board member to make a motion.
+        </p>
+      );
+    }
+    if (status === 'moved') {
+      return (
+        <p className="text-muted-foreground text-sm">
+          Moved by {moverName ?? 'a member'}. Awaiting a second from another board member.
+        </p>
+      );
+    }
+    return null;
+  }
+
+  // ── Voting members ────────────────────────────────────────────────────────
   if (status === 'open') {
     return (
       <div className="space-y-3">
@@ -86,8 +108,8 @@ export function MotionActions({
         ) : (
           <>
             <p className="text-muted-foreground text-sm">
-              Moved by {moverName ?? 'a member'}. Any other board member may second it to proceed
-              to voting.
+              Moved by {moverName ?? 'a member'}. Second it to proceed to the chair opening a
+              vote.
             </p>
             <form action={secondAction}>
               <Button type="submit" disabled={anyPending} className="h-11 w-full">

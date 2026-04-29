@@ -160,6 +160,7 @@ export default async function MotionDetailPage({ params }: { params: Promise<{ i
 
   const statusLabel = STATUS_LABELS[motion.status] ?? motion.status;
   const statusTone = STATUS_TONE[motion.status] ?? 'bg-neutral-100 text-neutral-700';
+  const isChair = member.role === 'chair';
   const hasAction = motion.status === 'open' || motion.status === 'moved';
 
   return (
@@ -186,12 +187,15 @@ export default async function MotionDetailPage({ params }: { params: Promise<{ i
       {hasAction && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Your action</CardTitle>
+            <CardTitle className="text-base">
+              {isChair ? 'Status' : 'Your action'}
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <MotionActions
               motionId={motion.id}
               status={motion.status}
+              isChair={isChair}
               currentMemberId={member.id}
               movedById={motion.moved_by}
               moverName={motion.moved_by ? (memberMap[motion.moved_by] ?? null) : null}
