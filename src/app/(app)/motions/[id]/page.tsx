@@ -6,6 +6,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { buttonVariants } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { MotionActions } from './_components/motion-actions';
+import { VotingPanel } from './_components/voting-panel';
 import { CommentForm } from './_components/comment-form';
 
 export const dynamic = 'force-dynamic';
@@ -115,6 +116,35 @@ export default async function MotionDetailPage({ params }: { params: Promise<{ i
     .eq('motion_id', id)
     .order('created_at');
 
+  // Vote data — only needed for voting/decided/ratified statuses
+  const VOTE_STATUSES = ['voting', 'decided_passed', 'decided_failed', 'decided_deferred', 'ratified'];
+  let myVote: string | null = null;
+  let tally = { aye: 0, nay: 0, abstain: 0, defer: 0 };
+  let totalVoters = 0;
+
+  if (VOTE_STATUSES.includes(motion.status)) {
+    const { data: votes } = await supabase
+      .from('votes')
+      .select('member_id, vote')
+      .eq('motion_id', id);
+
+    myVote = (votes ?? []).find((v) => v.member_id === member.id)?.vote ?? null;
+    for (const v of votes ?? []) {
+      if (v.vote === 'aye') tally.aye++;
+      else if (v.vote === 'nay') tally.nay++;
+      else if (v.vote === 'abstain') tally.abstain++;
+      else if (v.vote === 'defer') tally.defer++;
+    }
+
+    const { count } = await supabase
+      .from('members')
+      .select('id', { count: 'exact', head: true })
+      .eq('is_active', true)
+      .eq('role', 'member');
+
+    totalVoters = count ?? 0;
+  }
+
   // Activity timeline derived from motion columns
   type TimelineEvent = { at: string; label: string };
   const rawEvents: (TimelineEvent | null)[] = [
@@ -162,6 +192,8 @@ export default async function MotionDetailPage({ params }: { params: Promise<{ i
   const statusTone = STATUS_TONE[motion.status] ?? 'bg-neutral-100 text-neutral-700';
   const isChair = member.role === 'chair';
   const hasAction = motion.status === 'open' || motion.status === 'moved';
+  const hasVotingPanel = motion.status === 'seconded' || motion.status === 'voting';
+  const showVoteResults = ['decided_passed', 'decided_failed', 'decided_deferred', 'ratified'].includes(motion.status);
 
   return (
     <main className="mx-auto w-full max-w-2xl space-y-5 px-4 py-6">
@@ -183,7 +215,7 @@ export default async function MotionDetailPage({ params }: { params: Promise<{ i
         </Link>
       </div>
 
-      {/* ── Action card ─────────────────────────────────────────────────── */}
+      {/* ── Action card (open / moved) ──────────────────────────────────── */}
       {hasAction && (
         <Card>
           <CardHeader>
@@ -200,6 +232,69 @@ export default async function MotionDetailPage({ params }: { params: Promise<{ i
               movedById={motion.moved_by}
               moverName={motion.moved_by ? (memberMap[motion.moved_by] ?? null) : null}
             />
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ── Voting card (seconded / voting) ─────────────────────────────── */}
+      {hasVotingPanel && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">
+              {motion.status === 'seconded'
+                ? isChair
+                  ? 'Open voting'
+                  : 'Awaiting vote'
+                : isChair
+                  ? 'Voting in progress'
+                  : myVote
+                    ? 'Your vote'
+                    : 'Cast your vote'}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <VotingPanel
+              motionId={motion.id}
+              status={motion.status}
+              isChair={isChair}
+              currentMemberId={member.id}
+              myVote={myVote}
+              tally={tally}
+              totalVoters={totalVoters}
+            />
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ── Vote results (decided / ratified) ───────────────────────────── */}
+      {showVoteResults && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Vote results</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-4 gap-2 text-center text-sm">
+              <div className="rounded-md bg-emerald-50 px-2 py-2">
+                <p className="text-lg font-semibold text-emerald-800">{tally.aye}</p>
+                <p className="text-xs text-emerald-700">Aye</p>
+              </div>
+              <div className="rounded-md bg-red-50 px-2 py-2">
+                <p className="text-lg font-semibold text-red-800">{tally.nay}</p>
+                <p className="text-xs text-red-700">Nay</p>
+              </div>
+              <div className="rounded-md bg-neutral-100 px-2 py-2">
+                <p className="text-lg font-semibold text-neutral-700">{tally.abstain}</p>
+                <p className="text-xs text-neutral-600">Abstain</p>
+              </div>
+              <div className="rounded-md bg-purple-50 px-2 py-2">
+                <p className="text-lg font-semibold text-purple-800">{tally.defer}</p>
+                <p className="text-xs text-purple-700">Defer</p>
+              </div>
+            </div>
+            <p className="text-muted-foreground mt-2 text-xs text-right">
+              {tally.aye + tally.nay + tally.abstain + tally.defer} of {totalVoters} member
+              {totalVoters !== 1 ? 's' : ''} voted
+            </p>
           </CardContent>
         </Card>
       )}
