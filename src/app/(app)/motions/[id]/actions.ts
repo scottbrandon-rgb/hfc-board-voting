@@ -6,6 +6,11 @@ import { headers } from 'next/headers';
 import { requireMember, requireChair } from '@/lib/dal';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { computeMotionTextHash } from '@/lib/motions';
+import {
+  notifyVotingOpened,
+  notifyVotingClosed,
+  notifyMotionRatified,
+} from '@/lib/email';
 
 export type ActionState = { status: 'idle' } | { status: 'error'; message: string };
 export type VoteState = { status: 'idle' } | { status: 'error'; message: string } | { status: 'success' };
@@ -208,6 +213,14 @@ export async function openVoting(
     ...ctx,
   });
 
+  // Notify all active members that voting is open
+  const { data: allMembers } = await admin
+    .from('members')
+    .select('email')
+    .eq('is_active', true);
+  const emails = (allMembers ?? []).map((m) => m.email);
+  void notifyVotingOpened(emails, motionId, motion.motion_number, motion.title);
+
   revalidatePath(`/motions/${motionId}`);
   revalidatePath('/');
   redirect(`/motions/${motionId}`);
@@ -296,7 +309,7 @@ export async function closeVoting(
 
   const { data: motion } = await admin
     .from('motions')
-    .select('id, status, motion_number, motion_text_hash')
+    .select('id, status, motion_number, title, motion_text_hash')
     .eq('id', motionId)
     .maybeSingle();
 
@@ -346,6 +359,20 @@ export async function closeVoting(
 
   if (error) return { status: 'error', message: `Could not close voting: ${error.message}` };
 
+  // Tally final votes (including auto-abstains just inserted)
+  const { data: finalVotes } = await admin
+    .from('votes')
+    .select('vote')
+    .eq('motion_id', motionId);
+
+  const tally = { aye: 0, nay: 0, abstain: 0, defer: 0 };
+  for (const v of finalVotes ?? []) {
+    if (v.vote === 'aye') tally.aye++;
+    else if (v.vote === 'nay') tally.nay++;
+    else if (v.vote === 'abstain') tally.abstain++;
+    else if (v.vote === 'defer') tally.defer++;
+  }
+
   const ctx = await auditCtx();
   await admin.from('audit_log').insert({
     motion_id: motionId,
@@ -355,9 +382,18 @@ export async function closeVoting(
       motion_number: motion.motion_number,
       result,
       auto_abstained: nonVoters.length,
+      tally,
     },
     ...ctx,
   });
+
+  // Notify all active members of the result
+  const { data: allMembers } = await admin
+    .from('members')
+    .select('email')
+    .eq('is_active', true);
+  const emails = (allMembers ?? []).map((m) => m.email);
+  void notifyVotingClosed(emails, motionId, motion.motion_number, motion.title, result, tally);
 
   revalidatePath(`/motions/${motionId}`);
   revalidatePath('/');
@@ -403,7 +439,7 @@ export async function ratifyMotion(
 
   const { data: motion } = await admin
     .from('motions')
-    .select('id, status, motion_number')
+    .select('id, status, motion_number, title')
     .eq('id', motionId)
     .maybeSingle();
 
@@ -428,6 +464,14 @@ export async function ratifyMotion(
     event_data: { motion_number: motion.motion_number },
     ...ctx,
   });
+
+  // Notify all active members of ratification
+  const { data: allMembers } = await admin
+    .from('members')
+    .select('email')
+    .eq('is_active', true);
+  const emails = (allMembers ?? []).map((m) => m.email);
+  void notifyMotionRatified(emails, motionId, motion.motion_number, motion.title, member.full_name);
 
   revalidatePath(`/motions/${motionId}`);
   revalidatePath('/');

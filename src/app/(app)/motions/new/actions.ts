@@ -6,6 +6,7 @@ import { headers } from 'next/headers';
 import { requireChair } from '@/lib/dal';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { nextMotionNumber, sha256Hex } from '@/lib/motions';
+import { notifyMotionPublished } from '@/lib/email';
 
 const MAX_FILE_BYTES = 25 * 1024 * 1024; // 25 MB
 const MAX_ATTACHMENTS = 4;
@@ -85,7 +86,7 @@ export async function createMotion(
       created_by: chair.id,
       published_at: publishedAt,
     })
-    .select('id, motion_number')
+    .select('id, motion_number, title')
     .single();
 
   if (insertError || !motion) {
@@ -157,6 +158,16 @@ export async function createMotion(
         ]
       : []),
   ]);
+
+  // If published immediately, notify all active members
+  if (publish) {
+    const { data: allMembers } = await admin
+      .from('members')
+      .select('email')
+      .eq('is_active', true);
+    const emails = (allMembers ?? []).map((m) => m.email);
+    void notifyMotionPublished(emails, motion.id, motion.motion_number, motion.title);
+  }
 
   revalidatePath('/');
   redirect(`/motions/${motion.id}`);
