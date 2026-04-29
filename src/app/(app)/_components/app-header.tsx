@@ -4,6 +4,7 @@ import type { CurrentMember } from '@/lib/dal';
 
 export function AppHeader({ member }: { member: CurrentMember }) {
   const initial = member.full_name.trim().charAt(0).toUpperCase() || '?';
+  const isChair = member.role === 'chair';
 
   return (
     <header className="sticky top-0 z-10 border-b border-neutral-200 bg-white/95 backdrop-blur">
@@ -19,13 +20,24 @@ export function AppHeader({ member }: { member: CurrentMember }) {
           />
           <span className="sr-only">Board Voting</span>
         </Link>
-        <Link
-          href="/profile"
-          aria-label={`${member.full_name} — profile`}
-          className="absolute top-4 right-4 flex h-11 w-11 items-center justify-center rounded-full bg-neutral-900 text-sm font-semibold text-white transition-colors hover:bg-neutral-700"
-        >
-          {initial}
-        </Link>
+
+        <div className="absolute top-4 right-4 flex items-center gap-2">
+          {isChair && (
+            <Link
+              href="/admin/members"
+              className="text-muted-foreground hover:text-foreground flex h-11 items-center px-2 text-xs font-medium transition-colors"
+            >
+              Admin
+            </Link>
+          )}
+          <Link
+            href="/profile"
+            aria-label={`${member.full_name} — profile`}
+            className="flex h-11 w-11 items-center justify-center rounded-full bg-neutral-900 text-sm font-semibold text-white transition-colors hover:bg-neutral-700"
+          >
+            {initial}
+          </Link>
+        </div>
       </div>
     </header>
   );
