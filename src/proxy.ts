@@ -36,14 +36,13 @@ export async function proxy(request: NextRequest) {
   if (!user && !isAuthPath) {
     const url = request.nextUrl.clone();
     url.pathname = '/login';
-    url.search = `?next=${encodeURIComponent(path + request.nextUrl.search)}`;
+    url.search = '';
     return NextResponse.redirect(url);
   }
 
   if (user && path === '/login') {
-    const next = request.nextUrl.searchParams.get('next');
     const url = request.nextUrl.clone();
-    url.pathname = next && next.startsWith('/') ? next : '/';
+    url.pathname = '/';
     url.search = '';
     return NextResponse.redirect(url);
   }

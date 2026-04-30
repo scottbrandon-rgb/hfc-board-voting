@@ -5,20 +5,7 @@ export const metadata = {
   title: 'Sign in — HFC Board Voting',
 };
 
-interface Props {
-  searchParams: Promise<{ next?: string }>;
-}
-
-export default async function LoginPage({ searchParams }: Props) {
-  const { next } = await searchParams;
-  const appUrl = (process.env.APP_URL ?? 'http://localhost:3000').replace(/\/$/, '');
-
-  // Thread the ?next= param through the magic link so after sign-in the
-  // user lands on the page they were trying to reach (e.g. a motion).
-  const redirectTo = next
-    ? `${appUrl}/auth/callback?next=${encodeURIComponent(next)}`
-    : `${appUrl}/auth/callback`;
-
+export default function LoginPage() {
   return (
     <main className="flex min-h-dvh items-center justify-center bg-neutral-50 px-4 py-10">
       <Card className="w-full max-w-sm">
@@ -29,7 +16,7 @@ export default async function LoginPage({ searchParams }: Props) {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <LoginForm redirectTo={redirectTo} />
+          <LoginForm />
         </CardContent>
       </Card>
     </main>

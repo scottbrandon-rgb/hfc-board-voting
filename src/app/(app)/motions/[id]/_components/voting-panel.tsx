@@ -3,7 +3,7 @@
 import { useActionState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import { openVoting, castVote, closeVoting, sendVoteReminders, type ActionState, type VoteState } from '../actions';
+import { openVoting, castVote, closeVoting, type ActionState, type VoteState } from '../actions';
 
 interface Tally {
   aye: number;
@@ -83,10 +83,6 @@ export function VotingPanel({
     closeVoting.bind(null, motionId),
     initialState,
   );
-  const [reminderState, reminderAction, reminderPending] = useActionState(
-    sendVoteReminders.bind(null, motionId),
-    initialState,
-  );
 
   // Auto-refresh after vote is recorded so confirmation view shows immediately
   useEffect(() => {
@@ -134,24 +130,10 @@ export function VotingPanel({
         <div className="space-y-4">
           <TallyRow tally={tally} totalVoters={totalVoters} />
           {notYetVoted > 0 && (
-            <div className="space-y-2">
-              <p className="text-muted-foreground text-xs">
-                {notYetVoted} member{notYetVoted !== 1 ? 's have' : ' has'} not yet voted —
-                closing now will record an auto-abstain for {notYetVoted === 1 ? 'them' : 'each'}.
-              </p>
-              <form action={reminderAction}>
-                <button
-                  type="submit"
-                  disabled={reminderPending}
-                  className="text-muted-foreground hover:text-foreground text-xs underline underline-offset-2 disabled:opacity-50"
-                >
-                  {reminderPending ? 'Sending reminders…' : 'Send email reminder to non-voters'}
-                </button>
-              </form>
-              {reminderState.status === 'error' && (
-                <p className="text-destructive text-xs" role="alert">{reminderState.message}</p>
-              )}
-            </div>
+            <p className="text-muted-foreground text-xs">
+              {notYetVoted} member{notYetVoted !== 1 ? 's have' : ' has'} not yet voted —
+              closing now will record an auto-abstain for {notYetVoted === 1 ? 'them' : 'each'}.
+            </p>
           )}
           <form action={closeAction} className="space-y-3">
             <div className="space-y-1.5">

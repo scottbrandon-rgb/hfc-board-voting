@@ -7,13 +7,10 @@ import { requireMember, requireChair } from '@/lib/dal';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { computeMotionTextHash } from '@/lib/motions';
 import {
-  notifyMotionPublished,
   notifyVotingOpened,
   notifyVotingClosed,
-  notifyVoteReminder,
   notifyMotionRatified,
 } from '@/lib/email';
-import { generateAndStorePdf } from '@/lib/generate-pdf';
 
 export type ActionState = { status: 'idle' } | { status: 'error'; message: string };
 export type VoteState = { status: 'idle' } | { status: 'error'; message: string } | { status: 'success' };
@@ -28,102 +25,6 @@ async function auditCtx() {
     ip_address: h.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,
     user_agent: h.get('user-agent') ?? null,
   };
-}
-
-// ─── Publish draft ───────────────────────────────────────────────────────────
-
-export async function publishDraft(
-  motionId: string,
-  _prev: ActionState,
-  _formData: FormData,
-): Promise<ActionState> {
-  const member = await requireChair();
-  const admin = createAdminClient();
-
-  const { data: motion } = await admin
-    .from('motions')
-    .select('id, status, motion_number, title')
-    .eq('id', motionId)
-    .maybeSingle();
-
-  if (!motion) return { status: 'error', message: 'Motion not found.' };
-  if (motion.status !== 'draft')
-    return { status: 'error', message: 'Only draft motions can be published.' };
-
-  const now = new Date().toISOString();
-  const { error } = await admin
-    .from('motions')
-    .update({ status: 'open', published_at: now })
-    .eq('id', motionId)
-    .eq('status', 'draft');
-
-  if (error) return { status: 'error', message: `Could not publish motion: ${error.message}` };
-
-  const ctx = await auditCtx();
-  await admin.from('audit_log').insert({
-    motion_id: motionId,
-    member_id: member.id,
-    event_type: 'published',
-    event_data: { motion_number: motion.motion_number },
-    ...ctx,
-  });
-
-  // Notify all active members
-  const { data: allMembers } = await admin
-    .from('members')
-    .select('email')
-    .eq('is_active', true);
-  const emails = (allMembers ?? []).map((m) => m.email);
-  void notifyMotionPublished(emails, motionId, motion.motion_number, motion.title);
-
-  revalidatePath(`/motions/${motionId}`);
-  revalidatePath('/');
-  redirect(`/motions/${motionId}`);
-}
-
-// ─── Delete draft ─────────────────────────────────────────────────────────────
-
-export async function deleteDraft(
-  motionId: string,
-  _prev: ActionState,
-  _formData: FormData,
-): Promise<ActionState> {
-  await requireChair();
-  const admin = createAdminClient();
-
-  const { data: motion } = await admin
-    .from('motions')
-    .select('id, status, motion_number')
-    .eq('id', motionId)
-    .maybeSingle();
-
-  if (!motion) return { status: 'error', message: 'Motion not found.' };
-  if (motion.status !== 'draft')
-    return { status: 'error', message: 'Only draft motions can be deleted.' };
-
-  // Remove storage objects for all attachments first
-  const { data: attachments } = await admin
-    .from('motion_attachments')
-    .select('storage_path')
-    .eq('motion_id', motionId);
-
-  if (attachments && attachments.length > 0) {
-    await admin.storage
-      .from('motion-attachments')
-      .remove(attachments.map((a) => a.storage_path));
-  }
-
-  // Delete the motion row — cascade removes attachments, audit_log, comments
-  const { error } = await admin
-    .from('motions')
-    .delete()
-    .eq('id', motionId)
-    .eq('status', 'draft');
-
-  if (error) return { status: 'error', message: `Could not delete motion: ${error.message}` };
-
-  revalidatePath('/');
-  redirect('/');
 }
 
 // ─── Move ────────────────────────────────────────────────────────────────────
@@ -494,11 +395,6 @@ export async function closeVoting(
   const emails = (allMembers ?? []).map((m) => m.email);
   void notifyVotingClosed(emails, motionId, motion.motion_number, motion.title, result, tally);
 
-  // Generate and store the provisional PDF record
-  void generateAndStorePdf(motionId).catch((err) =>
-    console.error('[pdf] Generation failed after closeVoting:', err),
-  );
-
   revalidatePath(`/motions/${motionId}`);
   revalidatePath('/');
   redirect(`/motions/${motionId}`);
@@ -577,154 +473,9 @@ export async function ratifyMotion(
   const emails = (allMembers ?? []).map((m) => m.email);
   void notifyMotionRatified(emails, motionId, motion.motion_number, motion.title, member.full_name);
 
-  // Regenerate PDF with ratification block filled in
-  void generateAndStorePdf(motionId).catch((err) =>
-    console.error('[pdf] Generation failed after ratifyMotion:', err),
-  );
-
   revalidatePath(`/motions/${motionId}`);
   revalidatePath('/');
   redirect(`/motions/${motionId}`);
-}
-
-// ─── Send vote reminders ──────────────────────────────────────────────────────
-
-export async function sendVoteReminders(
-  motionId: string,
-  _prev: ActionState,
-  _formData: FormData,
-): Promise<ActionState> {
-  await requireChair();
-  const admin = createAdminClient();
-
-  const { data: motion } = await admin
-    .from('motions')
-    .select('id, status, motion_number, title')
-    .eq('id', motionId)
-    .maybeSingle();
-
-  if (!motion) return { status: 'error', message: 'Motion not found.' };
-  if (motion.status !== 'voting')
-    return { status: 'error', message: 'Reminders can only be sent while voting is open.' };
-
-  // Find active voting members who have NOT yet voted
-  const { data: voters } = await admin
-    .from('members')
-    .select('id, email')
-    .eq('is_active', true)
-    .eq('role', 'member');
-
-  const { data: existingVotes } = await admin
-    .from('votes')
-    .select('member_id')
-    .eq('motion_id', motionId);
-
-  const votedIds = new Set((existingVotes ?? []).map((v) => v.member_id));
-  const nonVoters = (voters ?? []).filter((m) => !votedIds.has(m.id));
-
-  if (nonVoters.length === 0)
-    return { status: 'error', message: 'All members have already voted.' };
-
-  const emailAddresses = nonVoters.map((m) => m.email);
-  await notifyVoteReminder(emailAddresses, motionId, motion.motion_number, motion.title);
-
-  revalidatePath(`/motions/${motionId}`);
-  return { status: 'idle' }; // stay on page, no redirect
-}
-
-// ─── Archive ──────────────────────────────────────────────────────────────────
-
-const ARCHIVABLE_STATUSES = [
-  'decided_passed', 'decided_failed', 'decided_deferred',
-  'ratified', 'withdrawn', 'died_no_motion', 'died_no_second',
-];
-
-export async function archiveMotion(
-  motionId: string,
-  _prev: ActionState,
-  _formData: FormData,
-): Promise<ActionState> {
-  const member = await requireChair();
-  const admin = createAdminClient();
-
-  const { data: motion } = await admin
-    .from('motions')
-    .select('id, status, motion_number')
-    .eq('id', motionId)
-    .maybeSingle();
-
-  if (!motion) return { status: 'error', message: 'Motion not found.' };
-  if (!ARCHIVABLE_STATUSES.includes(motion.status))
-    return { status: 'error', message: 'This motion cannot be archived in its current state.' };
-
-  const { error } = await admin
-    .from('motions')
-    .update({ status: 'archived' })
-    .eq('id', motionId);
-
-  if (error) return { status: 'error', message: `Could not archive motion: ${error.message}` };
-
-  const ctx = await auditCtx();
-  await admin.from('audit_log').insert({
-    motion_id: motionId,
-    member_id: member.id,
-    event_type: 'archived',
-    event_data: { motion_number: motion.motion_number, previous_status: motion.status },
-    ...ctx,
-  });
-
-  revalidatePath(`/motions/${motionId}`);
-  revalidatePath('/');
-  redirect('/');
-}
-
-// ─── Delete (any status, chair only) ─────────────────────────────────────────
-
-export async function deleteMotion(
-  motionId: string,
-  _prev: ActionState,
-  _formData: FormData,
-): Promise<ActionState> {
-  const member = await requireChair();
-  const admin = createAdminClient();
-
-  const { data: motion } = await admin
-    .from('motions')
-    .select('id, motion_number, status')
-    .eq('id', motionId)
-    .maybeSingle();
-
-  if (!motion) return { status: 'error', message: 'Motion not found.' };
-
-  // Remove all storage objects: motion attachments + PDF record
-  const { data: attachments } = await admin
-    .from('motion_attachments')
-    .select('storage_path')
-    .eq('motion_id', motionId);
-
-  if (attachments && attachments.length > 0) {
-    await admin.storage
-      .from('motion-attachments')
-      .remove(attachments.map((a) => a.storage_path));
-  }
-
-  await admin.storage.from('motion-pdfs').remove([`${motionId}.pdf`]);
-
-  const { error } = await admin.from('motions').delete().eq('id', motionId);
-
-  if (error) return { status: 'error', message: `Could not delete motion: ${error.message}` };
-
-  const ctx = await auditCtx();
-  await admin.from('audit_log').insert({
-    motion_id: null,
-    member_id: member.id,
-    event_type: 'deleted',
-    event_data: { motion_id: motionId, motion_number: motion.motion_number, status_at_deletion: motion.status },
-    ...ctx,
-  });
-
-  revalidatePath('/');
-  redirect('/');
 }
 
 // ─── Mark as died ─────────────────────────────────────────────────────────────
