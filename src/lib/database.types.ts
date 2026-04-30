@@ -108,6 +108,7 @@ export type Database = {
           full_name: string
           id: string
           is_active: boolean
+          phone: string | null
           role: string
         }
         Insert: {
@@ -116,6 +117,7 @@ export type Database = {
           full_name: string
           id?: string
           is_active?: boolean
+          phone?: string | null
           role: string
         }
         Update: {
@@ -124,6 +126,7 @@ export type Database = {
           full_name?: string
           id?: string
           is_active?: boolean
+          phone?: string | null
           role?: string
         }
         Relationships: []

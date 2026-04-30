@@ -20,7 +20,6 @@ export async function addMember(
   const fullName = (formData.get('full_name') as string | null)?.trim() ?? '';
   const email = (formData.get('email') as string | null)?.trim().toLowerCase() ?? '';
   const role = formData.get('role') as string | null;
-
   if (!fullName) return { status: 'error', message: 'Full name is required.' };
   if (!email || !email.includes('@')) return { status: 'error', message: 'A valid email is required.' };
   if (!role || !['member', 'chair'].includes(role))
