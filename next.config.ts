@@ -1,6 +1,7 @@
 import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
+  serverExternalPackages: ['@react-pdf/renderer'],
   experimental: {
     serverActions: {
       // Allow up to ~110MB per submission (4 attachments × 25MB + form overhead)

@@ -5,10 +5,12 @@ import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { buttonVariants } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { DraftActions } from './_components/draft-actions';
 import { MotionActions } from './_components/motion-actions';
 import { VotingPanel } from './_components/voting-panel';
 import { ChairActions } from './_components/chair-actions';
 import { CommentForm } from './_components/comment-form';
+import { getPdfSignedUrl } from '@/lib/generate-pdf';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,6 +29,7 @@ const STATUS_LABELS: Record<string, string> = {
   died_no_motion: 'Died — no motion',
   died_no_second: 'Died — no second',
   ratified: 'Ratified',
+  archived: 'Archived',
 };
 
 const STATUS_TONE: Record<string, string> = {
@@ -42,6 +45,7 @@ const STATUS_TONE: Record<string, string> = {
   died_no_motion: 'bg-neutral-100 text-neutral-700',
   died_no_second: 'bg-neutral-100 text-neutral-700',
   ratified: 'bg-emerald-100 text-emerald-900',
+  archived: 'bg-neutral-100 text-neutral-500',
 };
 
 // ─── Formatting helpers ───────────────────────────────────────────────────────
@@ -189,12 +193,22 @@ export default async function MotionDetailPage({ params }: { params: Promise<{ i
     a.at.localeCompare(b.at),
   );
 
+  // PDF download link (for decided / ratified motions)
+  const PDF_STATUSES = ['decided_passed', 'decided_failed', 'decided_deferred', 'ratified'];
+  const pdfSignedUrl = PDF_STATUSES.includes(motion.status)
+    ? await getPdfSignedUrl(motion.id)
+    : null;
+
   const statusLabel = STATUS_LABELS[motion.status] ?? motion.status;
   const statusTone = STATUS_TONE[motion.status] ?? 'bg-neutral-100 text-neutral-700';
   const isChair = member.role === 'chair';
+  const isDraft = motion.status === 'draft';
   const hasAction = motion.status === 'open' || motion.status === 'moved';
   const hasVotingPanel = motion.status === 'seconded' || motion.status === 'voting';
-  const hasChairActions = ['decided_passed', 'decided_failed', 'decided_deferred', 'ratified'].includes(motion.status);
+  const hasChairActions = [
+    'decided_passed', 'decided_failed', 'decided_deferred',
+    'ratified', 'archived', 'withdrawn', 'died_no_motion', 'died_no_second',
+  ].includes(motion.status);
   const showVoteResults = ['decided_passed', 'decided_failed', 'decided_deferred', 'ratified'].includes(motion.status);
 
   return (
@@ -216,6 +230,18 @@ export default async function MotionDetailPage({ params }: { params: Promise<{ i
           Back
         </Link>
       </div>
+
+      {/* ── Draft actions (chair: publish / delete) ─────────────────────── */}
+      {isDraft && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Draft</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <DraftActions motionId={motion.id} isChair={isChair} />
+          </CardContent>
+        </Card>
+      )}
 
       {/* ── Action card (open / moved) ──────────────────────────────────── */}
       {hasAction && (
@@ -322,6 +348,31 @@ export default async function MotionDetailPage({ params }: { params: Promise<{ i
               {tally.aye + tally.nay + tally.abstain + tally.defer} of {totalVoters} member
               {totalVoters !== 1 ? 's' : ''} voted
             </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ── PDF download ────────────────────────────────────────────────── */}
+      {pdfSignedUrl && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Motion record</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-muted-foreground mb-3 text-sm">
+              {motion.status === 'ratified'
+                ? 'Final ratified record with completed ratification block.'
+                : 'Provisional record — pending ratification at the next in-person session.'}
+            </p>
+            <a
+              href={pdfSignedUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              download={`${motion.motion_number}.pdf`}
+              className={buttonVariants({ variant: 'outline', size: 'sm' })}
+            >
+              Download PDF
+            </a>
           </CardContent>
         </Card>
       )}
