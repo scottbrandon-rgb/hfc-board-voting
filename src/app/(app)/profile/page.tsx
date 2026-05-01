@@ -1,9 +1,18 @@
 import { requireMember } from '@/lib/dal';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { EditNameForm } from './edit-name-form';
+
+export const dynamic = 'force-dynamic';
 
 export const metadata = {
   title: 'Profile — HFC Board Voting',
+};
+
+const ROLE_LABELS: Record<string, string> = {
+  chair: 'Chair',
+  secretary: 'Secretary',
+  member: 'Voting Member',
 };
 
 function Field({ label, value }: { label: string; value: string }) {
@@ -17,7 +26,6 @@ function Field({ label, value }: { label: string; value: string }) {
 
 export default async function ProfilePage() {
   const member = await requireMember();
-  const roleLabel = member.role === 'chair' ? 'Chair' : 'Voting Member';
 
   return (
     <main className="mx-auto w-full max-w-2xl space-y-6 px-4 py-6">
@@ -25,20 +33,9 @@ export default async function ProfilePage() {
 
       <Card>
         <CardContent className="space-y-4 pt-6">
-          <Field label="Name" value={member.full_name} />
+          <EditNameForm currentName={member.full_name} />
           <Field label="Email" value={member.email} />
-          <Field label="Role" value={roleLabel} />
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Notifications</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-muted-foreground text-sm">
-            Notification preferences will appear here in a future update.
-          </p>
+          <Field label="Role" value={ROLE_LABELS[member.role] ?? member.role} />
         </CardContent>
       </Card>
 

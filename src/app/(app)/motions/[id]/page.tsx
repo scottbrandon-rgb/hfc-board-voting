@@ -390,33 +390,49 @@ export default async function MotionDetailPage({ params }: { params: Promise<{ i
       {attachments && attachments.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Attachments</CardTitle>
+            <CardTitle className="text-base">
+              Attachments
+              <span className="text-muted-foreground ml-2 text-xs font-normal">
+                · links expire in 1 hour
+              </span>
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <ul className="divide-y">
-              {attachments.map((a) => (
-                <li
-                  key={a.id}
-                  className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0"
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">{a.file_name}</p>
-                    <p className="text-muted-foreground text-xs">
-                      {formatBytes(a.file_size)} · sha256&nbsp;{a.file_hash.slice(0, 12)}…
-                    </p>
-                  </div>
-                  {signedUrls[a.id] && (
-                    <a
-                      href={signedUrls[a.id]}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className={buttonVariants({ variant: 'outline', size: 'sm' })}
-                    >
-                      Open
-                    </a>
-                  )}
-                </li>
-              ))}
+              {attachments.map((a) => {
+                const isPdf = a.content_type === 'application/pdf';
+                const isImage = a.content_type?.startsWith('image/');
+                const typeIcon = isPdf ? '📄' : isImage ? '🖼️' : '📎';
+                return (
+                  <li
+                    key={a.id}
+                    className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0"
+                  >
+                    <div className="flex min-w-0 flex-1 items-center gap-2">
+                      <span className="text-base leading-none">{typeIcon}</span>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium">{a.file_name}</p>
+                        <p className="text-muted-foreground text-xs">
+                          {formatBytes(a.file_size)} · sha256&nbsp;{a.file_hash.slice(0, 12)}…
+                        </p>
+                      </div>
+                    </div>
+                    {signedUrls[a.id] ? (
+                      <a
+                        href={signedUrls[a.id]}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        download={a.file_name}
+                        className={buttonVariants({ variant: 'outline', size: 'sm' })}
+                      >
+                        Download
+                      </a>
+                    ) : (
+                      <span className="text-muted-foreground text-xs">Unavailable</span>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           </CardContent>
         </Card>

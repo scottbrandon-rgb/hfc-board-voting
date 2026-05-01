@@ -45,6 +45,7 @@ export default async function DashboardPage() {
     .select(
       'id, motion_number, title, status, created_at, published_at, moved_at, seconded_at, voting_opened_at, decided_at',
     )
+    .not('status', 'eq', 'archived')
     .order('created_at', { ascending: false });
 
   const motions = rows ?? [];
@@ -63,7 +64,6 @@ export default async function DashboardPage() {
     };
 
     if (m.status === 'draft') {
-      // Drafts are visible only to creator + chair (RLS); show in Active
       active.push(card);
     } else if ((IN_PROGRESS_STATUSES as readonly string[]).includes(m.status)) {
       inProgress.push(card);
@@ -75,39 +75,63 @@ export default async function DashboardPage() {
     }
   }
 
+  // Items that genuinely need this member's attention
+  const needsAction =
+    inProgress.filter((m) =>
+      (m.status === 'open' && member.role !== 'chair' && member.role !== 'secretary') ||
+      m.status === 'voting',
+    ).length + (isChair ? active.length : 0);
+
   return (
     <main className="mx-auto w-full max-w-3xl space-y-8 px-4 py-6">
+      {/* ── Header ─────────────────────────────────────────────────────── */}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
-          <p className="text-muted-foreground text-sm">
+          <p className="text-muted-foreground flex items-center gap-2 text-sm">
             Welcome back, {member.full_name.split(' ')[0]}.
+            {needsAction > 0 && (
+              <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                {needsAction} need{needsAction === 1 ? 's' : ''} action
+              </span>
+            )}
           </p>
         </div>
-        {isChair && (
-          <Link href="/motions/new" className={buttonVariants({ className: 'h-11 px-4' })}>
-            New motion
+        <div className="flex items-center gap-2">
+          <Link
+            href="/motions/history"
+            className={buttonVariants({ variant: 'outline', size: 'sm' })}
+          >
+            History
           </Link>
-        )}
+          {isChair && (
+            <Link href="/motions/new" className={buttonVariants({ className: 'h-9 px-4' })}>
+              New motion
+            </Link>
+          )}
+        </div>
       </div>
 
-      <DashboardSection title="Active" subtitle="Needs your action">
-        {active.length > 0 ? (
+      {/* ── Drafts (chair only, when drafts exist) ──────────────────────── */}
+      {isChair && active.length > 0 && (
+        <DashboardSection title="Drafts" subtitle="Not yet published">
           <div className="space-y-3">
             {active.map((m) => (
               <MotionCard key={m.id} motion={m} />
             ))}
           </div>
-        ) : (
-          <EmptyState>
-            {isChair
-              ? 'No drafts. Tap “New motion” to create one.'
-              : 'No motions need your action right now.'}
-          </EmptyState>
-        )}
-      </DashboardSection>
+        </DashboardSection>
+      )}
 
-      <DashboardSection title="In Progress" subtitle="Awaiting other members">
+      {/* ── In Progress ─────────────────────────────────────────────────── */}
+      <DashboardSection
+        title="In Progress"
+        subtitle={
+          inProgress.length > 0
+            ? `${inProgress.length} motion${inProgress.length !== 1 ? 's' : ''} in flight`
+            : 'All clear'
+        }
+      >
         {inProgress.length > 0 ? (
           <div className="space-y-3">
             {inProgress.map((m) => (
@@ -115,19 +139,33 @@ export default async function DashboardPage() {
             ))}
           </div>
         ) : (
-          <EmptyState>No motions in flight.</EmptyState>
+          <EmptyState>No motions in progress.</EmptyState>
         )}
       </DashboardSection>
 
-      <DashboardSection title="Recent" subtitle="Decided in the last 30 days">
+      {/* ── Recently Decided ────────────────────────────────────────────── */}
+      <DashboardSection title="Recently Decided" subtitle="Last 30 days">
         {recent.length > 0 ? (
-          <div className="space-y-3">
-            {recent.map((m) => (
-              <MotionCard key={m.id} motion={m} />
-            ))}
-          </div>
+          <>
+            <div className="space-y-3">
+              {recent.map((m) => (
+                <MotionCard key={m.id} motion={m} />
+              ))}
+            </div>
+            <Link
+              href="/motions/history"
+              className="mt-1 block text-center text-xs font-medium text-neutral-500 underline-offset-2 hover:text-neutral-900 hover:underline"
+            >
+              View full history →
+            </Link>
+          </>
         ) : (
-          <EmptyState>No recent motions.</EmptyState>
+          <EmptyState>
+            No motions decided in the last 30 days.{' '}
+            <Link href="/motions/history" className="underline underline-offset-2">
+              View full history
+            </Link>
+          </EmptyState>
         )}
       </DashboardSection>
     </main>
