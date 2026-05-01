@@ -54,18 +54,9 @@ export function MotionCard({ motion }: { motion: MotionCardData }) {
   return (
     <Link
       href={`/motions/${motion.id}`}
-      className="group block rounded-xl bg-white p-4 transition-all focus-visible:outline-none focus-visible:ring-2"
+      className="group block rounded-xl bg-white p-4 shadow-sm transition-all hover:shadow-md focus-visible:outline-none focus-visible:ring-2"
       style={{
         border: isActive ? '1.5px solid var(--primary)' : '1px solid var(--border)',
-        boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
-        // focus ring color
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      } as any}
-      onMouseEnter={(e) => {
-        (e.currentTarget as HTMLElement).style.boxShadow = '0 4px 12px rgba(0,0,0,0.08)';
-      }}
-      onMouseLeave={(e) => {
-        (e.currentTarget as HTMLElement).style.boxShadow = '0 1px 4px rgba(0,0,0,0.04)';
       }}
     >
       <div className="flex items-start justify-between gap-3">
