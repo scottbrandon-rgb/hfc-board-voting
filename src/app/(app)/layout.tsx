@@ -8,7 +8,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const member = await requireMember();
 
   return (
-    <div className="flex min-h-dvh flex-col bg-white">
+    <div className="flex min-h-dvh flex-col" style={{ background: 'var(--background)' }}>
       <AppHeader member={member} />
       <div className="flex-1">{children}</div>
       <ProvisionalFooter />

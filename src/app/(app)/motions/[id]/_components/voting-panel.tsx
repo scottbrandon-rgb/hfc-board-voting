@@ -25,38 +25,89 @@ interface Props {
 const initialState: ActionState = { status: 'idle' };
 const initialVoteState: VoteState = { status: 'idle' };
 
-const VOTE_LABELS: Record<string, string> = {
-  aye: 'Aye',
-  nay: 'Nay',
-  abstain: 'Abstain',
-  defer: 'Defer to in-person',
-};
+const VOTE_OPTIONS = [
+  {
+    value: 'aye',
+    label: 'Aye',
+    description: 'I vote in favour',
+    bg: 'var(--emerald-bg)',
+    color: 'var(--emerald-fg)',
+    selectedBorder: 'oklch(0.32 0.10 155)',
+  },
+  {
+    value: 'nay',
+    label: 'Nay',
+    description: 'I vote against',
+    bg: 'var(--red-bg)',
+    color: 'var(--red-fg)',
+    selectedBorder: 'oklch(0.40 0.13 25)',
+  },
+  {
+    value: 'abstain',
+    label: 'Abstain',
+    description: 'I choose not to vote',
+    bg: 'var(--muted)',
+    color: 'var(--foreground-muted)',
+    selectedBorder: 'var(--border-strong)',
+  },
+  {
+    value: 'defer',
+    label: 'Defer to in-person',
+    description: 'I prefer to vote at the meeting',
+    bg: 'var(--purple-bg)',
+    color: 'var(--purple-fg)',
+    selectedBorder: 'oklch(0.36 0.12 300)',
+  },
+] as const;
 
-function TallyRow({ tally, totalVoters }: { tally: Tally; totalVoters: number }) {
+type VoteValue = (typeof VOTE_OPTIONS)[number]['value'];
+
+/** 4-cell tally grid + progress bar */
+function TallyGrid({ tally, totalVoters }: { tally: Tally; totalVoters: number }) {
   const voted = tally.aye + tally.nay + tally.abstain + tally.defer;
+  const pct = totalVoters > 0 ? Math.round((voted / totalVoters) * 100) : 0;
+
+  const cells = [
+    { label: 'Aye',     count: tally.aye,     bg: 'var(--emerald-bg)', color: 'var(--emerald-fg)' },
+    { label: 'Nay',     count: tally.nay,     bg: 'var(--red-bg)',     color: 'var(--red-fg)' },
+    { label: 'Abstain', count: tally.abstain, bg: 'var(--muted)',      color: 'var(--foreground-muted)' },
+    { label: 'Defer',   count: tally.defer,   bg: 'var(--purple-bg)', color: 'var(--purple-fg)' },
+  ];
+
   return (
-    <div className="space-y-1.5">
-      <div className="grid grid-cols-4 gap-2 text-center text-sm">
-        <div className="rounded-md bg-emerald-50 px-2 py-2">
-          <p className="text-lg font-semibold text-emerald-800">{tally.aye}</p>
-          <p className="text-xs text-emerald-700">Aye</p>
-        </div>
-        <div className="rounded-md bg-red-50 px-2 py-2">
-          <p className="text-lg font-semibold text-red-800">{tally.nay}</p>
-          <p className="text-xs text-red-700">Nay</p>
-        </div>
-        <div className="rounded-md bg-neutral-100 px-2 py-2">
-          <p className="text-lg font-semibold text-neutral-700">{tally.abstain}</p>
-          <p className="text-xs text-neutral-600">Abstain</p>
-        </div>
-        <div className="rounded-md bg-purple-50 px-2 py-2">
-          <p className="text-lg font-semibold text-purple-800">{tally.defer}</p>
-          <p className="text-xs text-purple-700">Defer</p>
-        </div>
+    <div className="space-y-3">
+      <div className="grid grid-cols-4 gap-2">
+        {cells.map((c) => (
+          <div
+            key={c.label}
+            className="rounded-lg px-2 py-2.5 text-center"
+            style={{ background: c.bg }}
+          >
+            <p className="text-xl font-bold" style={{ color: c.color }}>
+              {c.count}
+            </p>
+            <p className="mt-0.5 text-xs font-medium" style={{ color: c.color }}>
+              {c.label}
+            </p>
+          </div>
+        ))}
       </div>
-      <p className="text-muted-foreground text-xs text-right">
-        {voted} of {totalVoters} member{totalVoters !== 1 ? 's' : ''} voted
-      </p>
+
+      {/* Progress bar */}
+      <div>
+        <div
+          className="h-1.5 w-full overflow-hidden rounded-full"
+          style={{ background: 'var(--muted)' }}
+        >
+          <div
+            className="h-full rounded-full transition-all"
+            style={{ width: `${pct}%`, background: 'var(--primary)' }}
+          />
+        </div>
+        <p className="mt-1 text-right text-xs" style={{ color: 'var(--foreground-subtle)' }}>
+          {voted} of {totalVoters} member{totalVoters !== 1 ? 's' : ''} voted
+        </p>
+      </div>
     </div>
   );
 }
@@ -84,7 +135,6 @@ export function VotingPanel({
     initialState,
   );
 
-  // Auto-refresh after vote is recorded so confirmation view shows immediately
   useEffect(() => {
     if (voteState.status === 'success') {
       router.refresh();
@@ -96,7 +146,7 @@ export function VotingPanel({
     if (isChair) {
       return (
         <div className="space-y-3">
-          <p className="text-muted-foreground text-sm">
+          <p className="text-sm" style={{ color: 'var(--foreground-muted)' }}>
             The motion has been seconded. Open voting when the board is ready.
           </p>
           <form action={openAction}>
@@ -105,7 +155,7 @@ export function VotingPanel({
             </Button>
           </form>
           {openState.status === 'error' && (
-            <p className="text-destructive text-sm" role="alert">
+            <p className="text-sm text-destructive" role="alert">
               {openState.message}
             </p>
           )}
@@ -113,7 +163,7 @@ export function VotingPanel({
       );
     }
     return (
-      <p className="text-muted-foreground text-sm">
+      <p className="text-sm" style={{ color: 'var(--foreground-muted)' }}>
         The motion has been seconded. Waiting for the chair to open voting.
       </p>
     );
@@ -128,27 +178,35 @@ export function VotingPanel({
     if (isChair) {
       return (
         <div className="space-y-4">
-          <TallyRow tally={tally} totalVoters={totalVoters} />
+          <TallyGrid tally={tally} totalVoters={totalVoters} />
           {notYetVoted > 0 && (
-            <p className="text-muted-foreground text-xs">
+            <p className="text-xs" style={{ color: 'var(--foreground-muted)' }}>
               {notYetVoted} member{notYetVoted !== 1 ? 's have' : ' has'} not yet voted —
               closing now will record an auto-abstain for {notYetVoted === 1 ? 'them' : 'each'}.
             </p>
           )}
           <form action={closeAction} className="space-y-3">
-            <div className="space-y-1.5">
-              <p className="text-sm font-medium">Declare result</p>
-              {(['passed', 'failed', 'deferred'] as const).map((r) => (
-                <label key={r} className="flex items-center gap-2.5 text-sm">
-                  <input type="radio" name="result" value={r} required className="accent-foreground" />
+            <p className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>
+              Declare result
+            </p>
+            {(['passed', 'failed', 'deferred'] as const).map((r) => (
+              <label key={r} className="flex cursor-pointer items-center gap-2.5 text-sm">
+                <input
+                  type="radio"
+                  name="result"
+                  value={r}
+                  required
+                  style={{ accentColor: 'var(--primary)' }}
+                />
+                <span style={{ color: 'var(--foreground)' }}>
                   {r === 'passed'
                     ? 'Passed (provisional)'
                     : r === 'failed'
                       ? 'Failed (provisional)'
                       : 'Deferred to in-person'}
-                </label>
-              ))}
-            </div>
+                </span>
+              </label>
+            ))}
             <Button
               type="submit"
               variant="outline"
@@ -159,7 +217,7 @@ export function VotingPanel({
             </Button>
           </form>
           {closeState.status === 'error' && (
-            <p className="text-destructive text-sm" role="alert">
+            <p className="text-sm text-destructive" role="alert">
               {closeState.message}
             </p>
           )}
@@ -169,39 +227,76 @@ export function VotingPanel({
 
     // Member: already voted — show confirmation + tally
     if (myVote) {
+      const opt = VOTE_OPTIONS.find((o) => o.value === myVote);
       return (
         <div className="space-y-4">
-          <p className="text-sm">
-            Your vote has been recorded:{' '}
-            <span className="font-semibold">{VOTE_LABELS[myVote] ?? myVote}</span> ✓
-          </p>
-          <TallyRow tally={tally} totalVoters={totalVoters} />
+          <div
+            className="flex items-center gap-2.5 rounded-xl px-4 py-3"
+            style={{ background: opt?.bg ?? 'var(--muted)', border: '1px solid var(--border)' }}
+          >
+            <span className="text-base">✓</span>
+            <span className="text-sm font-medium" style={{ color: opt?.color ?? 'var(--foreground)' }}>
+              Your vote: <strong>{opt?.label ?? myVote}</strong>
+            </span>
+          </div>
+          <TallyGrid tally={tally} totalVoters={totalVoters} />
         </div>
       );
     }
 
-    // Member: has not yet voted — show ballot
+    // Member: has not yet voted — vote choice cards
     return (
       <div className="space-y-3">
-        <p className="text-muted-foreground text-sm">Select your vote and submit.</p>
-        <form action={voteAction} className="space-y-3">
-          <div className="space-y-2">
-            {(['aye', 'nay', 'abstain', 'defer'] as const).map((v) => (
-              <label
-                key={v}
-                className="flex items-center gap-2.5 rounded-md border px-3 py-2.5 text-sm cursor-pointer has-[:checked]:border-foreground has-[:checked]:bg-neutral-50"
-              >
-                <input type="radio" name="vote" value={v} required className="accent-foreground" />
-                {VOTE_LABELS[v]}
-              </label>
-            ))}
+        <p className="text-sm" style={{ color: 'var(--foreground-muted)' }}>
+          Select your vote and submit.
+        </p>
+        <form action={voteAction} className="space-y-2">
+          {VOTE_OPTIONS.map((opt) => (
+            <label
+              key={opt.value}
+              className="group flex cursor-pointer items-center gap-3 rounded-xl border px-4 py-3 transition-all has-[:checked]:border-2"
+              style={
+                {
+                  border: '1.5px solid var(--border)',
+                  '--checked-border': opt.selectedBorder,
+                } as React.CSSProperties
+              }
+            >
+              <input
+                type="radio"
+                name="vote"
+                value={opt.value}
+                required
+                className="sr-only"
+              />
+              {/* Colour swatch */}
+              <span
+                className="h-3 w-3 shrink-0 rounded-full"
+                style={{ background: opt.color }}
+              />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>
+                  {opt.label}
+                </p>
+                <p className="text-xs" style={{ color: 'var(--foreground-subtle)' }}>
+                  {opt.description}
+                </p>
+              </div>
+            </label>
+          ))}
+
+          <div className="pt-1">
+            <Button
+              type="submit"
+              disabled={votePending}
+              className="h-12 w-full text-sm font-semibold"
+            >
+              {votePending ? 'Submitting…' : 'Submit vote'}
+            </Button>
           </div>
-          <Button type="submit" disabled={votePending} className="h-11 w-full">
-            {votePending ? 'Submitting…' : 'Submit vote'}
-          </Button>
         </form>
         {voteState.status === 'error' && (
-          <p className="text-destructive text-sm" role="alert">
+          <p className="text-sm text-destructive" role="alert">
             {voteState.message}
           </p>
         )}

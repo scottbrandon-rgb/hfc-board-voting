@@ -6,7 +6,7 @@ import { EditNameForm } from './edit-name-form';
 export const dynamic = 'force-dynamic';
 
 export const metadata = {
-  title: 'Profile — HFC Board Voting',
+  title: 'Profile — Harrison Faith Board Voting',
 };
 
 const ROLE_LABELS: Record<string, string> = {

@@ -10,9 +10,10 @@ export function DashboardLink() {
   return (
     <Link
       href="/"
-      className="text-muted-foreground hover:text-foreground flex h-11 items-center px-2 text-xs font-medium transition-colors"
+      className="flex h-8 items-center rounded-md px-3 text-xs font-medium transition-colors"
+      style={{ color: 'var(--foreground-muted)' }}
     >
-      ← Dashboard
+      Dashboard
     </Link>
   );
 }

@@ -130,7 +130,7 @@ async function jobDiedNoMotion(): Promise<string[]> {
       </p>
       ${btn(url, 'View motion')}
     `);
-    await sendEmail(emails, `[HFC Board] Motion expired: ${m.title}`, html);
+    await sendEmail(emails, `[Harrison Faith Board] Motion expired: ${m.title}`, html);
   }
 
   return ids;
@@ -194,7 +194,7 @@ async function jobDiedNoSecond(): Promise<string[]> {
       </p>
       ${btn(url, 'View motion')}
     `);
-    await sendEmail(emails, `[HFC Board] Motion died — no second: ${m.title}`, html);
+    await sendEmail(emails, `[Harrison Faith Board] Motion died — no second: ${m.title}`, html);
   }
 
   return ids;
@@ -369,7 +369,7 @@ async function jobVoteReminder(): Promise<number> {
 
     await sendEmail(
       pendingEmails,
-      `[HFC Board] Reminder: vote closes in ~24 hours — ${motion.title}`,
+      `[Harrison Faith Board] Reminder: vote closes in ~24 hours — ${motion.title}`,
       html,
     );
     sent += pendingEmails.length;

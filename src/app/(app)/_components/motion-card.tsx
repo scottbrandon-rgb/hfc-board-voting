@@ -15,20 +15,24 @@ const STATUS_LABELS: Record<string, string> = {
   ratified: 'Ratified',
 };
 
-const STATUS_TONE: Record<string, string> = {
-  draft: 'bg-neutral-100 text-neutral-700',
-  open: 'bg-blue-50 text-blue-800',
-  moved: 'bg-blue-50 text-blue-800',
-  seconded: 'bg-amber-50 text-amber-800',
-  voting: 'bg-emerald-50 text-emerald-800',
-  decided_passed: 'bg-emerald-50 text-emerald-800',
-  decided_failed: 'bg-red-50 text-red-800',
-  decided_deferred: 'bg-purple-50 text-purple-800',
-  withdrawn: 'bg-neutral-100 text-neutral-700',
-  died_no_motion: 'bg-neutral-100 text-neutral-700',
-  died_no_second: 'bg-neutral-100 text-neutral-700',
-  ratified: 'bg-emerald-100 text-emerald-900',
+// Pill badge styles using CSS vars
+const STATUS_STYLE: Record<string, { bg: string; color: string }> = {
+  draft:            { bg: 'var(--muted)',      color: 'var(--foreground-muted)' },
+  open:             { bg: 'var(--blue-bg)',    color: 'var(--blue-fg)' },
+  moved:            { bg: 'var(--blue-bg)',    color: 'var(--blue-fg)' },
+  seconded:         { bg: 'var(--amber-bg)',   color: 'var(--amber-fg)' },
+  voting:           { bg: 'var(--emerald-bg)', color: 'var(--emerald-fg)' },
+  decided_passed:   { bg: 'var(--emerald-bg)', color: 'var(--emerald-fg)' },
+  decided_failed:   { bg: 'var(--red-bg)',     color: 'var(--red-fg)' },
+  decided_deferred: { bg: 'var(--purple-bg)',  color: 'var(--purple-fg)' },
+  withdrawn:        { bg: 'var(--muted)',      color: 'var(--foreground-muted)' },
+  died_no_motion:   { bg: 'var(--muted)',      color: 'var(--foreground-muted)' },
+  died_no_second:   { bg: 'var(--muted)',      color: 'var(--foreground-muted)' },
+  ratified:         { bg: 'var(--emerald-bg)', color: 'var(--emerald-fg)' },
 };
+
+// Cards with active voting get a blue accent border
+const VOTING_STATUSES = new Set(['voting', 'open', 'moved', 'seconded']);
 
 export type MotionCardData = {
   id: string;
@@ -39,8 +43,9 @@ export type MotionCardData = {
 };
 
 export function MotionCard({ motion }: { motion: MotionCardData }) {
-  const tone = STATUS_TONE[motion.status] ?? 'bg-neutral-100 text-neutral-700';
+  const style = STATUS_STYLE[motion.status] ?? STATUS_STYLE.draft;
   const label = STATUS_LABELS[motion.status] ?? motion.status;
+  const isActive = VOTING_STATUSES.has(motion.status);
   const updatedDate = new Date(motion.updated_at).toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
@@ -49,22 +54,45 @@ export function MotionCard({ motion }: { motion: MotionCardData }) {
   return (
     <Link
       href={`/motions/${motion.id}`}
-      className="block rounded-lg border border-neutral-200 bg-white p-4 transition-colors hover:bg-neutral-50 focus-visible:ring-2 focus-visible:ring-neutral-900/20 focus-visible:outline-none"
+      className="group block rounded-xl bg-white p-4 transition-all focus-visible:outline-none focus-visible:ring-2"
+      style={{
+        border: isActive ? '1.5px solid var(--primary)' : '1px solid var(--border)',
+        boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
+        // focus ring color
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any}
+      onMouseEnter={(e) => {
+        (e.currentTarget as HTMLElement).style.boxShadow = '0 4px 12px rgba(0,0,0,0.08)';
+      }}
+      onMouseLeave={(e) => {
+        (e.currentTarget as HTMLElement).style.boxShadow = '0 1px 4px rgba(0,0,0,0.04)';
+      }}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <p className="text-muted-foreground text-xs font-medium">{motion.motion_number}</p>
-          <h3 className="mt-0.5 line-clamp-2 text-sm font-medium text-neutral-900">
+          <p
+            className="text-xs font-semibold uppercase tracking-wider"
+            style={{ color: 'var(--foreground-subtle)', letterSpacing: '0.06em' }}
+          >
+            {motion.motion_number}
+          </p>
+          <h3
+            className="mt-1 line-clamp-2 text-sm font-medium"
+            style={{ color: 'var(--foreground)' }}
+          >
             {motion.title}
           </h3>
         </div>
         <span
-          className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap ${tone}`}
+          className="shrink-0 whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-medium"
+          style={{ background: style.bg, color: style.color }}
         >
           {label}
         </span>
       </div>
-      <p className="text-muted-foreground mt-2 text-xs">Updated {updatedDate}</p>
+      <p className="mt-2 text-xs" style={{ color: 'var(--foreground-subtle)' }}>
+        Updated {updatedDate}
+      </p>
     </Link>
   );
 }

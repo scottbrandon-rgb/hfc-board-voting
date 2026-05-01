@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server';
 import { isWithinDays } from '@/lib/motions';
 import { buttonVariants } from '@/components/ui/button';
 import { DashboardSection, EmptyState } from './_components/dashboard-section';
+// buttonVariants used for mobile "New motion" button
 import { MotionCard, type MotionCardData } from './_components/motion-card';
 
 const IN_PROGRESS_STATUSES = ['open', 'moved', 'seconded', 'voting'] as const;
@@ -87,29 +88,31 @@ export default async function DashboardPage() {
       {/* ── Header ─────────────────────────────────────────────────────── */}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
-          <p className="text-muted-foreground flex items-center gap-2 text-sm">
+          <h1
+            className="text-2xl font-bold tracking-tight"
+            style={{ color: 'var(--foreground)', letterSpacing: '-0.03em' }}
+          >
+            Dashboard
+          </h1>
+          <p className="mt-0.5 flex items-center gap-2 text-sm" style={{ color: 'var(--foreground-muted)' }}>
             Welcome back, {member.full_name.split(' ')[0]}.
             {needsAction > 0 && (
-              <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+              <span
+                className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold"
+                style={{ background: 'var(--amber-bg)', color: 'var(--amber-fg)' }}
+              >
                 {needsAction} need{needsAction === 1 ? 's' : ''} action
               </span>
             )}
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Link
-            href="/motions/history"
-            className={buttonVariants({ variant: 'outline', size: 'sm' })}
-          >
-            History
-          </Link>
-          {isChair && (
+        {isChair && (
+          <div className="flex items-center gap-2 sm:hidden">
             <Link href="/motions/new" className={buttonVariants({ className: 'h-9 px-4' })}>
               New motion
             </Link>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       {/* ── Drafts (chair only, when drafts exist) ──────────────────────── */}

@@ -6,7 +6,7 @@ import { Card, CardContent } from '@/components/ui/card';
 export const dynamic = 'force-dynamic';
 
 export const metadata = {
-  title: 'Motion History — HFC Board Voting',
+  title: 'Motion History — Harrison Faith Board Voting',
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -114,7 +114,8 @@ export default async function HistoryPage() {
                 <Link
                   key={m.id}
                   href={`/motions/${m.id}`}
-                  className="flex items-center justify-between gap-3 rounded-lg border border-neutral-200 bg-white px-4 py-3 transition-colors hover:bg-neutral-50"
+                  className="flex items-center justify-between gap-3 rounded-xl border bg-white px-4 py-3 transition-all hover:shadow-sm"
+                  style={{ borderColor: 'var(--border)' }}
                 >
                   <div className="min-w-0 flex-1">
                     <p className="text-muted-foreground text-xs font-medium">{m.motion_number}</p>

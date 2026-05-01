@@ -91,7 +91,7 @@ export async function notifyMotionPublished(
     </p>
     ${btn(url, 'View motion')}
   `);
-  await send(to, `[HFC Board] New motion: ${title}`, html);
+  await send(to, `[Harrison Faith Board] New motion: ${title}`, html);
 }
 
 export async function notifyVotingOpened(
@@ -110,7 +110,7 @@ export async function notifyVotingOpened(
     </p>
     ${btn(url, 'Cast your vote')}
   `);
-  await send(to, `[HFC Board] Vote now open: ${title}`, html);
+  await send(to, `[Harrison Faith Board] Vote now open: ${title}`, html);
 }
 
 export async function notifyVotingClosed(
@@ -163,7 +163,7 @@ export async function notifyVotingClosed(
     </p>
     ${btn(url, 'View results')}
   `);
-  await send(to, `[HFC Board] Vote result: ${resultLabel} — ${title}`, html);
+  await send(to, `[Harrison Faith Board] Vote result: ${resultLabel} — ${title}`, html);
 }
 
 export async function notifyMotionRatified(
@@ -182,7 +182,7 @@ export async function notifyMotionRatified(
     </p>
     ${btn(url, 'View motion')}
   `);
-  await send(to, `[HFC Board] Ratified: ${title}`, html);
+  await send(to, `[Harrison Faith Board] Ratified: ${title}`, html);
 }
 
 export async function notifyVoteReminder(
@@ -200,5 +200,5 @@ export async function notifyVoteReminder(
     </p>
     ${btn(url, 'Cast your vote')}
   `);
-  await send(to, `[HFC Board] Reminder: your vote is needed — ${title}`, html);
+  await send(to, `[Harrison Faith Board] Reminder: your vote is needed — ${title}`, html);
 }

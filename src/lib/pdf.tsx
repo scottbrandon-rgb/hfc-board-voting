@@ -133,12 +133,12 @@ export function MotionPdf({ data }: { data: PdfMotionData }) {
       author="Harrison Faith Church"
       subject="Board Motion Record"
       keywords={`motion_id hfc board`}
-      creator="HFC Board Voting Platform"
+      creator="Harrison Faith Board Voting Platform"
     >
       <Page size="LETTER" style={s.page} wrap>
         {/* ── Header ────────────────────────────────────────────── */}
         <Text style={s.org}>HARRISON FAITH CHURCH</Text>
-        <Text style={s.sub}>Board of Directors</Text>
+        <Text style={s.sub}>Deacon Board</Text>
         <Text style={s.docTitle}>PROVISIONAL MOTION RECORD</Text>
         <Text style={s.provisional}>Subject to ratification at the next regular session</Text>
         <View style={s.divider} />
@@ -251,13 +251,13 @@ export function MotionPdf({ data }: { data: PdfMotionData }) {
           {!isRatified && (
             <Text style={s.statusBody}>
               This electronic action is non-binding and serves only to expedite deliberation.
-              Final adoption requires ratification by the Board of Directors at the next
+              Final adoption requires ratification by the Deacon Board at the next
               regular in-person session, per HFC Constitution and Bylaws.
             </Text>
           )}
           {isRatified && (
             <Text style={s.statusBody}>
-              This motion has been formally ratified by the Board of Directors at an in-person
+              This motion has been formally ratified by the Deacon Board at an in-person
               session and is officially adopted per HFC Constitution and Bylaws.
             </Text>
           )}

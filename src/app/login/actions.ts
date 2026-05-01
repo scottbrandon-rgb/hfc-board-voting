@@ -9,7 +9,7 @@ export type LoginState =
   | { status: 'error'; message: string };
 
 const ALLOWLIST_ERROR =
-  'That email is not authorized for the HFC Board Voting Platform. If you believe this is a mistake, contact Scott Brandon.';
+  'That email is not authorized for the Harrison Faith Board Voting. If you believe this is a mistake, contact Scott Brandon.';
 
 function isValidEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
