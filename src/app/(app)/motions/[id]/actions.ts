@@ -142,8 +142,8 @@ export async function moveMotion(
     .eq('id', motionId)
     .maybeSingle();
 
-  if (member.role === 'chair' || member.role === 'secretary')
-    return { status: 'error', message: 'The chair and secretary cannot make a motion.' };
+  if (member.role === 'chair')
+    return { status: 'error', message: 'The chair cannot make a motion.' };
   if (!motion) return { status: 'error', message: 'Motion not found.' };
   if (motion.status !== 'open')
     return {
@@ -190,8 +190,8 @@ export async function secondMotion(
     .eq('id', motionId)
     .maybeSingle();
 
-  if (member.role === 'chair' || member.role === 'secretary')
-    return { status: 'error', message: 'The chair and secretary cannot second a motion.' };
+  if (member.role === 'chair')
+    return { status: 'error', message: 'The chair cannot second a motion.' };
   if (!motion) return { status: 'error', message: 'Motion not found.' };
   if (motion.status !== 'moved')
     return { status: 'error', message: 'Motion is not currently awaiting a second.' };
@@ -337,8 +337,8 @@ export async function castVote(
 ): Promise<VoteState> {
   const member = await requireMember();
 
-  if (member.role === 'chair' || member.role === 'secretary')
-    return { status: 'error', message: 'The chair and secretary do not cast votes.' };
+  if (member.role === 'chair')
+    return { status: 'error', message: 'The chair does not cast a vote.' };
 
   const vote = formData.get('vote') as string | null;
   if (!vote || !VALID_VOTES.includes(vote as VoteChoice))
@@ -577,10 +577,12 @@ export async function ratifyMotion(
   const emails = (allMembers ?? []).map((m) => m.email);
   void notifyMotionRatified(emails, motionId, motion.motion_number, motion.title, member.full_name);
 
-  // Regenerate PDF with ratification block filled in
-  void generateAndStorePdf(motionId).catch((err) =>
-    console.error('[pdf] Generation failed after ratifyMotion:', err),
-  );
+  // Await PDF so the download link is ready when the page reloads
+  try {
+    await generateAndStorePdf(motionId);
+  } catch (err) {
+    console.error('[pdf] Generation failed after ratifyMotion:', err);
+  }
 
   revalidatePath(`/motions/${motionId}`);
   revalidatePath('/');

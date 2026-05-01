@@ -1,6 +1,7 @@
 'use client';
 
-import { useActionState } from 'react';
+import { useActionState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { moveMotion, secondMotion, withdrawMotion, markDied, type ActionState } from '../actions';
 
@@ -23,6 +24,7 @@ export function MotionActions({
   movedById,
   moverName,
 }: Props) {
+  const router = useRouter();
   const [moveState, moveAction, movePending] = useActionState(
     moveMotion.bind(null, motionId),
     initialState,
@@ -41,6 +43,12 @@ export function MotionActions({
   );
 
   const anyPending = movePending || secondPending || withdrawPending || diedPending;
+
+  // Force server component refresh whenever an action completes so status is always current
+  useEffect(() => {
+    if (!anyPending) router.refresh();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [anyPending]);
 
   const errorMsg =
     (moveState.status === 'error' && moveState.message) ||

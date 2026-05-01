@@ -229,7 +229,7 @@ export default async function MotionDetailPage({ params }: { params: Promise<{ i
           </span>
         </div>
         <Link href="/" className={buttonVariants({ variant: 'ghost', size: 'sm' })}>
-          Back
+          ← Dashboard
         </Link>
       </div>
 

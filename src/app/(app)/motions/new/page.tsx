@@ -15,7 +15,7 @@ export default async function NewMotionPage() {
       <div className="flex items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold tracking-tight">New motion</h1>
         <Link href="/" className={buttonVariants({ variant: 'ghost', size: 'sm' })}>
-          Back
+          ← Dashboard
         </Link>
       </div>
       <p className="text-muted-foreground text-sm">
