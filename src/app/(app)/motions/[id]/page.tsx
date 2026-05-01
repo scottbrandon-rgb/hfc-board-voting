@@ -228,9 +228,6 @@ export default async function MotionDetailPage({ params }: { params: Promise<{ i
             {statusLabel}
           </span>
         </div>
-        <Link href="/" className={buttonVariants({ variant: 'ghost', size: 'sm' })}>
-          ← Dashboard
-        </Link>
       </div>
 
       {/* ── Draft actions (chair: publish / delete) ─────────────────────── */}

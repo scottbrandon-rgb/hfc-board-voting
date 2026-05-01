@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import type { CurrentMember } from '@/lib/dal';
+import { DashboardLink } from './dashboard-link';
 
 export function AppHeader({ member }: { member: CurrentMember }) {
   const initial = member.full_name.trim().charAt(0).toUpperCase() || '?';
@@ -21,6 +22,12 @@ export function AppHeader({ member }: { member: CurrentMember }) {
           <span className="sr-only">Board Voting</span>
         </Link>
 
+        {/* Left side: Dashboard link (hidden on dashboard itself) */}
+        <div className="absolute top-4 left-4 flex items-center">
+          <DashboardLink />
+        </div>
+
+        {/* Right side: Admin + profile */}
         <div className="absolute top-4 right-4 flex items-center gap-2">
           {isChair && (
             <Link

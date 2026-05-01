@@ -1,6 +1,5 @@
-import Link from 'next/link';
 import { requireMember } from '@/lib/dal';
-import { Button, buttonVariants } from '@/components/ui/button';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 export const metadata = {
@@ -22,12 +21,7 @@ export default async function ProfilePage() {
 
   return (
     <main className="mx-auto w-full max-w-2xl space-y-6 px-4 py-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold tracking-tight">Profile</h1>
-        <Link href="/" className={buttonVariants({ variant: 'ghost', size: 'sm' })}>
-          ← Dashboard
-        </Link>
-      </div>
+      <h1 className="text-2xl font-semibold tracking-tight">Profile</h1>
 
       <Card>
         <CardContent className="space-y-4 pt-6">
