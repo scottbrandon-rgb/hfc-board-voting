@@ -8,6 +8,7 @@ export const dynamic = 'force-dynamic';
 
 const ROLE_LABELS: Record<string, string> = {
   chair: 'Chair',
+  secretary: 'Secretary',
   member: 'Member',
 };
 
@@ -18,7 +19,7 @@ export default async function AdminMembersPage() {
   const { data: members } = await admin
     .from('members')
     .select('id, full_name, email, role, is_active, created_at')
-    .order('role', { ascending: true }) // chair first
+    .order('role', { ascending: true })
     .order('full_name', { ascending: true });
 
   const active = (members ?? []).filter((m) => m.is_active);
@@ -61,7 +62,7 @@ export default async function AdminMembersPage() {
                 return (
                   <li
                     key={m.id}
-                    className="flex items-center justify-between gap-3 py-3 first:pt-0 last:pb-0"
+                    className="flex items-start justify-between gap-3 py-3 first:pt-0 last:pb-0"
                   >
                     <div className="flex items-center gap-3 min-w-0">
                       <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-neutral-900 text-sm font-semibold text-white">
@@ -77,14 +78,15 @@ export default async function AdminMembersPage() {
                         <p className="text-muted-foreground truncate text-xs">{m.email}</p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-3 shrink-0">
-                      <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-700">
+                    <div className="flex items-start gap-3 shrink-0">
+                      <span className="mt-0.5 rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-700">
                         {ROLE_LABELS[m.role] ?? m.role}
                       </span>
                       <MemberRowActions
                         memberId={m.id}
                         isActive={m.is_active}
                         role={m.role}
+                        email={m.email}
                         isSelf={isSelf}
                       />
                     </div>
@@ -109,7 +111,7 @@ export default async function AdminMembersPage() {
                 return (
                   <li
                     key={m.id}
-                    className="flex items-center justify-between gap-3 py-3 first:pt-0 last:pb-0 opacity-60"
+                    className="flex items-start justify-between gap-3 py-3 first:pt-0 last:pb-0 opacity-60"
                   >
                     <div className="flex items-center gap-3 min-w-0">
                       <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-neutral-300 text-sm font-semibold text-neutral-600">
@@ -120,14 +122,15 @@ export default async function AdminMembersPage() {
                         <p className="text-muted-foreground truncate text-xs">{m.email}</p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-3 shrink-0">
-                      <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-500">
+                    <div className="flex items-start gap-3 shrink-0">
+                      <span className="mt-0.5 rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-500">
                         {ROLE_LABELS[m.role] ?? m.role}
                       </span>
                       <MemberRowActions
                         memberId={m.id}
                         isActive={m.is_active}
                         role={m.role}
+                        email={m.email}
                         isSelf={false}
                       />
                     </div>

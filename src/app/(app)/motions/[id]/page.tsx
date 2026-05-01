@@ -193,11 +193,13 @@ export default async function MotionDetailPage({ params }: { params: Promise<{ i
     a.at.localeCompare(b.at),
   );
 
-  // PDF download link (for decided / ratified motions)
+  // PDF download — only chair and secretary can download
   const PDF_STATUSES = ['decided_passed', 'decided_failed', 'decided_deferred', 'ratified'];
-  const pdfSignedUrl = PDF_STATUSES.includes(motion.status)
-    ? await getPdfSignedUrl(motion.id)
-    : null;
+  const canDownloadPdf = member.role === 'chair' || member.role === 'secretary';
+  const pdfSignedUrl =
+    canDownloadPdf && PDF_STATUSES.includes(motion.status)
+      ? await getPdfSignedUrl(motion.id)
+      : null;
 
   const statusLabel = STATUS_LABELS[motion.status] ?? motion.status;
   const statusTone = STATUS_TONE[motion.status] ?? 'bg-neutral-100 text-neutral-700';

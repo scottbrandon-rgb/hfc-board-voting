@@ -54,6 +54,7 @@ export function AddMemberForm() {
             className="w-full rounded-md border border-neutral-300 px-3 py-2 text-sm focus:border-neutral-500 focus:outline-none focus:ring-1 focus:ring-neutral-500"
           >
             <option value="member">Member</option>
+            <option value="secretary">Secretary</option>
             <option value="chair">Chair</option>
           </select>
         </div>

@@ -9,6 +9,8 @@ export type MemberActionState =
   | { status: 'error'; message: string }
   | { status: 'success' };
 
+const VALID_ROLES = ['member', 'secretary', 'chair'] as const;
+
 // ─── Add member ───────────────────────────────────────────────────────────────
 
 export async function addMember(
@@ -23,12 +25,11 @@ export async function addMember(
 
   if (!fullName) return { status: 'error', message: 'Full name is required.' };
   if (!email || !email.includes('@')) return { status: 'error', message: 'A valid email is required.' };
-  if (!role || !['member', 'chair'].includes(role))
-    return { status: 'error', message: 'Role must be member or chair.' };
+  if (!role || !(VALID_ROLES as readonly string[]).includes(role))
+    return { status: 'error', message: 'Invalid role.' };
 
   const admin = createAdminClient();
 
-  // Guard: duplicate email
   const { data: existing } = await admin
     .from('members')
     .select('id')
@@ -72,7 +73,6 @@ export async function toggleMemberActive(
 
   if (!target) return { status: 'error', message: 'Member not found.' };
 
-  // Guard: don't deactivate the last active chair
   if (target.role === 'chair' && target.is_active) {
     const { count } = await admin
       .from('members')
@@ -107,7 +107,7 @@ export async function updateMemberRole(
     return { status: 'error', message: 'You cannot change your own role.' };
 
   const role = formData.get('role') as string | null;
-  if (!role || !['member', 'chair'].includes(role))
+  if (!role || !(VALID_ROLES as readonly string[]).includes(role))
     return { status: 'error', message: 'Invalid role.' };
 
   const admin = createAdminClient();
@@ -120,8 +120,7 @@ export async function updateMemberRole(
 
   if (!target) return { status: 'error', message: 'Member not found.' };
 
-  // Guard: demoting a chair — ensure another active chair remains
-  if (target.role === 'chair' && role === 'member' && target.is_active) {
+  if (target.role === 'chair' && role !== 'chair' && target.is_active) {
     const { count } = await admin
       .from('members')
       .select('id', { count: 'exact', head: true })
@@ -134,6 +133,80 @@ export async function updateMemberRole(
   const { error } = await admin.from('members').update({ role }).eq('id', memberId);
 
   if (error) return { status: 'error', message: `Could not update role: ${error.message}` };
+
+  revalidatePath('/admin/members');
+  return { status: 'success' };
+}
+
+// ─── Update email ─────────────────────────────────────────────────────────────
+
+export async function updateMemberEmail(
+  memberId: string,
+  _prev: MemberActionState,
+  formData: FormData,
+): Promise<MemberActionState> {
+  await requireChair();
+
+  const email = (formData.get('email') as string | null)?.trim().toLowerCase() ?? '';
+  if (!email || !email.includes('@'))
+    return { status: 'error', message: 'A valid email is required.' };
+
+  const admin = createAdminClient();
+
+  // Guard: duplicate email on a different record
+  const { data: existing } = await admin
+    .from('members')
+    .select('id')
+    .ilike('email', email)
+    .neq('id', memberId)
+    .maybeSingle();
+
+  if (existing) return { status: 'error', message: 'That email is already used by another member.' };
+
+  const { error } = await admin.from('members').update({ email }).eq('id', memberId);
+
+  if (error) return { status: 'error', message: `Could not update email: ${error.message}` };
+
+  revalidatePath('/admin/members');
+  return { status: 'success' };
+}
+
+// ─── Delete member ────────────────────────────────────────────────────────────
+
+export async function deleteMember(
+  memberId: string,
+  _prev: MemberActionState,
+  _formData: FormData,
+): Promise<MemberActionState> {
+  const chair = await requireChair();
+
+  if (memberId === chair.id)
+    return { status: 'error', message: 'You cannot delete your own account.' };
+
+  const admin = createAdminClient();
+
+  const { data: target } = await admin
+    .from('members')
+    .select('id, role, is_active')
+    .eq('id', memberId)
+    .maybeSingle();
+
+  if (!target) return { status: 'error', message: 'Member not found.' };
+
+  // Guard: don't delete the last active chair
+  if (target.role === 'chair' && target.is_active) {
+    const { count } = await admin
+      .from('members')
+      .select('id', { count: 'exact', head: true })
+      .eq('role', 'chair')
+      .eq('is_active', true);
+    if ((count ?? 0) <= 1)
+      return { status: 'error', message: 'Cannot delete the only active chair.' };
+  }
+
+  const { error } = await admin.from('members').delete().eq('id', memberId);
+
+  if (error) return { status: 'error', message: `Could not delete member: ${error.message}` };
 
   revalidatePath('/admin/members');
   return { status: 'success' };

@@ -142,8 +142,8 @@ export async function moveMotion(
     .eq('id', motionId)
     .maybeSingle();
 
-  if (member.role === 'chair')
-    return { status: 'error', message: 'The chair cannot make a motion.' };
+  if (member.role === 'chair' || member.role === 'secretary')
+    return { status: 'error', message: 'The chair and secretary cannot make a motion.' };
   if (!motion) return { status: 'error', message: 'Motion not found.' };
   if (motion.status !== 'open')
     return {
@@ -190,8 +190,8 @@ export async function secondMotion(
     .eq('id', motionId)
     .maybeSingle();
 
-  if (member.role === 'chair')
-    return { status: 'error', message: 'The chair cannot second a motion.' };
+  if (member.role === 'chair' || member.role === 'secretary')
+    return { status: 'error', message: 'The chair and secretary cannot second a motion.' };
   if (!motion) return { status: 'error', message: 'Motion not found.' };
   if (motion.status !== 'moved')
     return { status: 'error', message: 'Motion is not currently awaiting a second.' };
@@ -337,8 +337,8 @@ export async function castVote(
 ): Promise<VoteState> {
   const member = await requireMember();
 
-  if (member.role === 'chair')
-    return { status: 'error', message: 'The chair does not cast a vote.' };
+  if (member.role === 'chair' || member.role === 'secretary')
+    return { status: 'error', message: 'The chair and secretary do not cast votes.' };
 
   const vote = formData.get('vote') as string | null;
   if (!vote || !VALID_VOTES.includes(vote as VoteChoice))

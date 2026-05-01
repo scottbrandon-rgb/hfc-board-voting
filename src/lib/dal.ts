@@ -7,7 +7,7 @@ export type CurrentMember = {
   id: string;
   email: string;
   full_name: string;
-  role: 'chair' | 'member';
+  role: 'chair' | 'secretary' | 'member';
 };
 
 export const getCurrentMember = cache(async (): Promise<CurrentMember | null> => {
@@ -37,5 +37,12 @@ export async function requireMember(): Promise<CurrentMember> {
 export async function requireChair(): Promise<CurrentMember> {
   const member = await requireMember();
   if (member.role !== 'chair') redirect('/');
+  return member;
+}
+
+/** Allows both chair and secretary — for read/download actions. */
+export async function requireChairOrSecretary(): Promise<CurrentMember> {
+  const member = await requireMember();
+  if (member.role !== 'chair' && member.role !== 'secretary') redirect('/');
   return member;
 }
