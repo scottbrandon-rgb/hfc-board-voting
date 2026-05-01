@@ -67,21 +67,21 @@ export type Database = {
           body: string
           created_at: string
           id: string
-          member_id: string
+          member_id: string | null
           motion_id: string
         }
         Insert: {
           body: string
           created_at?: string
           id?: string
-          member_id: string
+          member_id?: string | null
           motion_id: string
         }
         Update: {
           body?: string
           created_at?: string
           id?: string
-          member_id?: string
+          member_id?: string | null
           motion_id?: string
         }
         Relationships: [

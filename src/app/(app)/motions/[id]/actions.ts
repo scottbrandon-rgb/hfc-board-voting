@@ -518,6 +518,14 @@ export async function postComment(
   if (body.length > 4000)
     return { status: 'error', message: 'Comment must be 4,000 characters or fewer.' };
 
+  // Defensive: surface a clear error if the session resolved without a member id
+  if (!member.id) {
+    return {
+      status: 'error',
+      message: 'Your session has expired. Please sign in again.',
+    };
+  }
+
   const admin = createAdminClient();
   const { error } = await admin.from('comments').insert({
     motion_id: motionId,

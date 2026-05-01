@@ -450,7 +450,7 @@ export default async function MotionDetailPage({ params }: { params: Promise<{ i
                 <li key={c.id} className="space-y-1">
                   <div className="flex items-baseline gap-2">
                     <span className="text-sm font-medium">
-                      {memberMap[c.member_id] ?? 'Board member'}
+                      {c.member_id ? (memberMap[c.member_id] ?? 'Board member') : 'Former board member'}
                     </span>
                     <span className="text-muted-foreground text-xs">{formatDate(c.created_at)}</span>
                   </div>
