@@ -184,3 +184,21 @@ export async function notifyMotionRatified(
   `);
   await send(to, `[HFC Board] Ratified: ${title}`, html);
 }
+
+export async function notifyVoteReminder(
+  to: string[],
+  motionId: string,
+  motionNumber: string,
+  title: string,
+): Promise<void> {
+  const url = `${APP_URL}/motions/${motionId}`;
+  const html = shell(`
+    ${motionMeta(motionNumber, title)}
+    <p style="margin:0 0 8px;color:#374151;font-size:14px;line-height:1.6;">
+      <strong>Reminder:</strong> You have not yet cast your vote on this motion.
+      If you do not vote before the deadline, you will be automatically recorded as <strong>Abstain</strong>.
+    </p>
+    ${btn(url, 'Cast your vote')}
+  `);
+  await send(to, `[HFC Board] Reminder: your vote is needed — ${title}`, html);
+}
