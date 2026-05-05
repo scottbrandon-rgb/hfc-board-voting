@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState, useEffect } from 'react';
+import { useActionState, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { openVoting, castVote, closeVoting, type ActionState, type VoteState } from '../actions';
@@ -121,6 +121,7 @@ export function VotingPanel({
   totalVoters,
 }: Props) {
   const router = useRouter();
+  const [selectedVote, setSelectedVote] = useState<VoteValue | null>(null);
 
   const [openState, openAction, openPending] = useActionState(
     openVoting.bind(null, motionId),
@@ -251,47 +252,65 @@ export function VotingPanel({
           Select your vote and submit.
         </p>
         <form action={voteAction} className="space-y-2">
-          {VOTE_OPTIONS.map((opt) => (
-            <label
-              key={opt.value}
-              className="group flex cursor-pointer items-center gap-3 rounded-xl border px-4 py-3 transition-all has-[:checked]:border-2"
-              style={
-                {
-                  border: '1.5px solid var(--border)',
-                  '--checked-border': opt.selectedBorder,
-                } as React.CSSProperties
-              }
-            >
-              <input
-                type="radio"
-                name="vote"
-                value={opt.value}
-                required
-                className="sr-only"
-              />
-              {/* Colour swatch */}
-              <span
-                className="h-3 w-3 shrink-0 rounded-full"
-                style={{ background: opt.color }}
-              />
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>
-                  {opt.label}
-                </p>
-                <p className="text-xs" style={{ color: 'var(--foreground-subtle)' }}>
-                  {opt.description}
-                </p>
-              </div>
-            </label>
-          ))}
+          {VOTE_OPTIONS.map((opt) => {
+            const isSelected = selectedVote === opt.value;
+            return (
+              <label
+                key={opt.value}
+                className="flex cursor-pointer items-center gap-3 rounded-xl px-4 py-3 transition-all"
+                style={{
+                  border: isSelected
+                    ? `2px solid ${opt.selectedBorder}`
+                    : '1.5px solid var(--border)',
+                  background: isSelected ? opt.bg : 'white',
+                  boxShadow: isSelected ? `0 0 0 3px ${opt.bg}` : 'none',
+                }}
+              >
+                <input
+                  type="radio"
+                  name="vote"
+                  value={opt.value}
+                  required
+                  className="sr-only"
+                  onChange={() => setSelectedVote(opt.value)}
+                />
+                {/* Checkmark when selected, colour swatch when not */}
+                <span
+                  className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-xs font-bold transition-all"
+                  style={{
+                    background: isSelected ? opt.selectedBorder : 'var(--muted)',
+                    color: 'white',
+                  }}
+                >
+                  {isSelected ? '✓' : ''}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p
+                    className="text-sm font-semibold"
+                    style={{ color: isSelected ? opt.selectedBorder : 'var(--foreground)' }}
+                  >
+                    {opt.label}
+                  </p>
+                  <p className="text-xs" style={{ color: 'var(--foreground-subtle)' }}>
+                    {opt.description}
+                  </p>
+                </div>
+              </label>
+            );
+          })}
 
           <div className="pt-1">
             <Button
               type="submit"
-              disabled={votePending}
-              className="h-12 w-full text-sm font-semibold"
+              disabled={votePending || !selectedVote}
+              className="h-12 w-full text-sm font-semibold transition-opacity"
+              style={{ opacity: selectedVote ? 1 : 0.45 }}
             >
-              {votePending ? 'Submitting…' : 'Submit vote'}
+              {votePending
+                ? 'Submitting…'
+                : selectedVote
+                  ? `Submit — ${VOTE_OPTIONS.find((o) => o.value === selectedVote)?.label}`
+                  : 'Select a vote above'}
             </Button>
           </div>
         </form>
