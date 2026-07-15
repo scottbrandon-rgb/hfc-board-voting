@@ -47,8 +47,8 @@ export function LoginForm() {
     e.preventDefault();
     setVerifyError(null);
     const token = code.trim();
-    if (token.length < 6) {
-      setVerifyError('Enter the 6-digit code from your email.');
+    if (token.length < 8) {
+      setVerifyError('Enter the 8-digit code from your email.');
       return;
     }
     setVerifying(true);
@@ -78,22 +78,22 @@ export function LoginForm() {
         <div className="space-y-2 text-center">
           <h2 className="text-lg font-semibold">Enter your code</h2>
           <p className="text-muted-foreground text-sm">
-            We emailed a 6-digit code to <span className="font-medium">{sentEmail}</span>. Enter it
+            We emailed an 8-digit code to <span className="font-medium">{sentEmail}</span>. Enter it
             below to sign in.
           </p>
         </div>
         <div className="space-y-2">
-          <Label htmlFor="code">6-digit code</Label>
+          <Label htmlFor="code">8-digit code</Label>
           <Input
             id="code"
             name="code"
             inputMode="numeric"
             autoComplete="one-time-code"
             pattern="[0-9]*"
-            maxLength={6}
+            maxLength={8}
             required
             autoFocus
-            placeholder="123456"
+            placeholder="12345678"
             value={code}
             onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
             className="text-center text-lg tracking-[0.4em]"

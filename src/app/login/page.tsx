@@ -42,7 +42,7 @@ export default function LoginPage() {
         <div className="mb-6" style={{ borderTop: '1px solid var(--border)' }} />
 
         <p className="mb-5 text-sm" style={{ color: 'var(--foreground-muted)' }}>
-          Enter your board email and we&rsquo;ll send you a 6-digit sign-in code.
+          Enter your board email and we&rsquo;ll send you an 8-digit sign-in code.
         </p>
 
         <LoginForm />
