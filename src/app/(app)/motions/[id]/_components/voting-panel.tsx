@@ -18,7 +18,13 @@ interface Props {
   isChair: boolean;
   currentMemberId: string;
   myVote: string | null;
-  tally: Tally;
+  /**
+   * Null while voting is open and the viewer is not the chair. Props are part
+   * of the payload the browser receives, so withholding the breakdown here is
+   * what actually keeps a running count off a voting member's screen.
+   */
+  tally: Tally | null;
+  votedCount: number;
   totalVoters: number;
 }
 
@@ -62,10 +68,31 @@ const VOTE_OPTIONS = [
 
 type VoteValue = (typeof VOTE_OPTIONS)[number]['value'];
 
+/** Turnout bar — how many have voted, with no breakdown of the choices. */
+function VoteProgress({ voted, totalVoters }: { voted: number; totalVoters: number }) {
+  const pct = totalVoters > 0 ? Math.round((voted / totalVoters) * 100) : 0;
+
+  return (
+    <div>
+      <div
+        className="h-1.5 w-full overflow-hidden rounded-full"
+        style={{ background: 'var(--muted)' }}
+      >
+        <div
+          className="h-full rounded-full transition-all"
+          style={{ width: `${pct}%`, background: 'var(--primary)' }}
+        />
+      </div>
+      <p className="mt-1 text-right text-xs" style={{ color: 'var(--foreground-subtle)' }}>
+        {voted} of {totalVoters} member{totalVoters !== 1 ? 's' : ''} voted
+      </p>
+    </div>
+  );
+}
+
 /** 4-cell tally grid + progress bar */
 function TallyGrid({ tally, totalVoters }: { tally: Tally; totalVoters: number }) {
   const voted = tally.aye + tally.nay + tally.abstain + tally.defer;
-  const pct = totalVoters > 0 ? Math.round((voted / totalVoters) * 100) : 0;
 
   const cells = [
     { label: 'Aye',     count: tally.aye,     bg: 'var(--emerald-bg)', color: 'var(--emerald-fg)' },
@@ -93,21 +120,7 @@ function TallyGrid({ tally, totalVoters }: { tally: Tally; totalVoters: number }
         ))}
       </div>
 
-      {/* Progress bar */}
-      <div>
-        <div
-          className="h-1.5 w-full overflow-hidden rounded-full"
-          style={{ background: 'var(--muted)' }}
-        >
-          <div
-            className="h-full rounded-full transition-all"
-            style={{ width: `${pct}%`, background: 'var(--primary)' }}
-          />
-        </div>
-        <p className="mt-1 text-right text-xs" style={{ color: 'var(--foreground-subtle)' }}>
-          {voted} of {totalVoters} member{totalVoters !== 1 ? 's' : ''} voted
-        </p>
-      </div>
+      <VoteProgress voted={voted} totalVoters={totalVoters} />
     </div>
   );
 }
@@ -118,6 +131,7 @@ export function VotingPanel({
   isChair,
   myVote,
   tally,
+  votedCount,
   totalVoters,
 }: Props) {
   const router = useRouter();
@@ -172,14 +186,18 @@ export function VotingPanel({
 
   // ── Voting open ────────────────────────────────────────────────────────────
   if (status === 'voting') {
-    const voted = tally.aye + tally.nay + tally.abstain + tally.defer;
+    const voted = votedCount;
     const notYetVoted = totalVoters - voted;
 
     // Chair: tally + close form
     if (isChair) {
       return (
         <div className="space-y-4">
-          <TallyGrid tally={tally} totalVoters={totalVoters} />
+          {tally ? (
+            <TallyGrid tally={tally} totalVoters={totalVoters} />
+          ) : (
+            <VoteProgress voted={voted} totalVoters={totalVoters} />
+          )}
           {notYetVoted > 0 && (
             <p className="text-xs" style={{ color: 'var(--foreground-muted)' }}>
               {notYetVoted} member{notYetVoted !== 1 ? 's have' : ' has'} not yet voted —
@@ -226,7 +244,13 @@ export function VotingPanel({
       );
     }
 
-    // Member: already voted — show confirmation + tally
+    // Member: already voted — show their own vote back, plus turnout.
+    //
+    // Turnout only, no running aye/nay breakdown. The Voting status card names
+    // who has voted; pairing that with a live breakdown would let anyone read
+    // an individual ballot off a small board, which is exactly what a running
+    // count is not supposed to reveal. The full tally appears once the chair
+    // declares the result.
     if (myVote) {
       const opt = VOTE_OPTIONS.find((o) => o.value === myVote);
       return (
@@ -240,7 +264,10 @@ export function VotingPanel({
               Your vote: <strong>{opt?.label ?? myVote}</strong>
             </span>
           </div>
-          <TallyGrid tally={tally} totalVoters={totalVoters} />
+          <VoteProgress voted={voted} totalVoters={totalVoters} />
+          <p className="text-xs" style={{ color: 'var(--foreground-subtle)' }}>
+            Results are published when the chair closes voting.
+          </p>
         </div>
       );
     }
