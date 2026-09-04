@@ -247,7 +247,7 @@ async function jobAutoCloseVote(): Promise<string[]> {
         nonVoters.map((m) => ({
           motion_id: motion.id,
           member_id: m.id,
-          vote: 'abstain',
+          vote: 'auto_abstain',
           motion_hash_at_vote: motion.motion_text_hash ?? '',
           cast_at: now,
         })),
@@ -263,8 +263,8 @@ async function jobAutoCloseVote(): Promise<string[]> {
     const tally = { aye: 0, nay: 0, abstain: 0, defer: 0 };
     for (const v of finalVotes ?? []) {
       if (v.vote === 'aye') tally.aye++;
+      else if (v.vote === 'abstain' || v.vote === 'auto_abstain') tally.abstain++;
       else if (v.vote === 'nay') tally.nay++;
-      else if (v.vote === 'abstain') tally.abstain++;
       else if (v.vote === 'defer') tally.defer++;
     }
 

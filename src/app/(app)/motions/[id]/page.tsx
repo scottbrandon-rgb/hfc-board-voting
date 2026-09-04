@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { DraftActions } from './_components/draft-actions';
 import { MotionActions } from './_components/motion-actions';
 import { VotingPanel } from './_components/voting-panel';
+import { ParticipationList, type Participation } from './_components/participation-list';
 import { ChairActions } from './_components/chair-actions';
 import { CommentForm } from './_components/comment-form';
 import { getPdfSignedUrl } from '@/lib/generate-pdf';
@@ -121,33 +122,63 @@ export default async function MotionDetailPage({ params }: { params: Promise<{ i
     .eq('motion_id', id)
     .order('created_at');
 
-  // Vote data — only needed for voting/decided/ratified statuses
+  // Vote data — only needed for voting/decided/ratified statuses.
+  //
+  // Read through the admin client, not the member-scoped one: RLS lets a member
+  // read only their own ballot (migration 013). Vote *choices* are aggregated
+  // into the tally here and never leave the server — the only choice serialized
+  // to the browser is the viewer's own. `participation` carries names and cast
+  // times only, which is what the board needs to chase down non-voters.
   const VOTE_STATUSES = ['voting', 'decided_passed', 'decided_failed', 'decided_deferred', 'ratified'];
   let myVote: string | null = null;
-  let tally = { aye: 0, nay: 0, abstain: 0, defer: 0 };
+  const tally = { aye: 0, nay: 0, abstain: 0, defer: 0 };
   let totalVoters = 0;
+  let participation: Participation = { voted: [], pending: [] };
 
   if (VOTE_STATUSES.includes(motion.status)) {
-    const { data: votes } = await supabase
-      .from('votes')
-      .select('member_id, vote')
-      .eq('motion_id', id);
+    const [{ data: votes }, { data: voters }] = await Promise.all([
+      admin.from('votes').select('member_id, vote, cast_at').eq('motion_id', id).order('cast_at'),
+      admin
+        .from('members')
+        .select('id, full_name')
+        .eq('is_active', true)
+        .eq('role', 'member')
+        .order('full_name'),
+    ]);
 
     myVote = (votes ?? []).find((v) => v.member_id === member.id)?.vote ?? null;
     for (const v of votes ?? []) {
       if (v.vote === 'aye') tally.aye++;
+      else if (v.vote === 'abstain' || v.vote === 'auto_abstain') tally.abstain++;
       else if (v.vote === 'nay') tally.nay++;
-      else if (v.vote === 'abstain') tally.abstain++;
       else if (v.vote === 'defer') tally.defer++;
     }
 
-    const { count } = await supabase
-      .from('members')
-      .select('id', { count: 'exact', head: true })
-      .eq('is_active', true)
-      .eq('role', 'member');
+    totalVoters = (voters ?? []).length;
 
-    totalVoters = count ?? 0;
+    // A member who never responded is auto-abstained at close. That row is a
+    // system action, not a cast ballot, so it stays in the "did not vote" list.
+    const castByMember = new Map(
+      (votes ?? [])
+        .filter((v) => v.vote !== 'auto_abstain')
+        .map((v) => [v.member_id, v.cast_at]),
+    );
+    const autoAbstained = new Set(
+      (votes ?? []).filter((v) => v.vote === 'auto_abstain').map((v) => v.member_id),
+    );
+
+    participation = {
+      voted: (voters ?? [])
+        .filter((m) => castByMember.has(m.id))
+        .map((m) => {
+          const castAt = castByMember.get(m.id)!;
+          return { name: m.full_name, castAt, castAtLabel: formatTs(castAt) };
+        })
+        .sort((a, b) => a.castAt.localeCompare(b.castAt)),
+      pending: (voters ?? [])
+        .filter((m) => !castByMember.has(m.id))
+        .map((m) => ({ name: m.full_name, autoAbstained: autoAbstained.has(m.id) })),
+    };
   }
 
   // Activity timeline derived from motion columns
@@ -188,6 +219,8 @@ export default async function MotionDetailPage({ params }: { params: Promise<{ i
         }
       : null,
     motion.withdrawn_at ? { at: motion.withdrawn_at, label: 'Withdrawn' } : null,
+    // Vote receipts — that a member voted, never how.
+    ...participation.voted.map((v) => ({ at: v.castAt, label: `Vote cast by ${v.name}` })),
   ];
   const timeline = (rawEvents.filter(Boolean) as TimelineEvent[]).sort((a, b) =>
     a.at.localeCompare(b.at),
@@ -212,6 +245,10 @@ export default async function MotionDetailPage({ params }: { params: Promise<{ i
     'ratified', 'archived', 'withdrawn', 'died_no_motion', 'died_no_second',
   ].includes(motion.status);
   const showVoteResults = ['decided_passed', 'decided_failed', 'decided_deferred', 'ratified'].includes(motion.status);
+  // While voting is open the running breakdown goes to the chair alone, who
+  // needs it to judge when to close. Everyone else sees turnout until the
+  // result is declared.
+  const liveTallyVisible = motion.status !== 'voting' || isChair;
 
   return (
     <main className="mx-auto w-full max-w-2xl space-y-5 px-4 py-6">
@@ -286,9 +323,22 @@ export default async function MotionDetailPage({ params }: { params: Promise<{ i
               isChair={isChair}
               currentMemberId={member.id}
               myVote={myVote}
-              tally={tally}
+              tally={liveTallyVisible ? tally : null}
+              votedCount={participation.voted.length}
               totalVoters={totalVoters}
             />
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ── Voting status — who has cast a vote, not how ────────────────── */}
+      {motion.status === 'voting' && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Voting status</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ParticipationList participation={participation} closed={false} />
           </CardContent>
         </Card>
       )}
@@ -343,10 +393,9 @@ export default async function MotionDetailPage({ params }: { params: Promise<{ i
                 <p className="text-xs text-purple-700">Defer</p>
               </div>
             </div>
-            <p className="text-muted-foreground mt-2 text-xs text-right">
-              {tally.aye + tally.nay + tally.abstain + tally.defer} of {totalVoters} member
-              {totalVoters !== 1 ? 's' : ''} voted
-            </p>
+            <div className="mt-4 border-t pt-4">
+              <ParticipationList participation={participation} closed />
+            </div>
           </CardContent>
         </Card>
       )}
