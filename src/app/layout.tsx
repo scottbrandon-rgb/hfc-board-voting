@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { Inter } from 'next/font/google';
 import './globals.css';
 
@@ -10,10 +10,25 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   title: {
-    default: 'Harrison Faith Board Voting',
-    template: '%s · Harrison Faith Board Voting',
+    default: 'HFC Deacon Board',
+    template: '%s · HFC Deacon Board',
   },
-  description: 'Provisional motion deliberation for the Harrison Faith Church Deacon Board.',
+  description: 'Motions, votes and meetings for the Harrison Faith Church Deacon Board.',
+  applicationName: 'HFC Board',
+  appleWebApp: {
+    capable: true,
+    title: 'HFC Board',
+    statusBarStyle: 'default',
+  },
+  formatDetection: { telephone: false },
+  robots: { index: false, follow: false },
+};
+
+export const viewport: Viewport = {
+  themeColor: '#1f4fbf',
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
 };
 
 export default function RootLayout({
@@ -23,7 +38,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`${inter.variable} h-full antialiased`}>
-      <body className="flex min-h-full flex-col">{children}</body>
+      <body className="bg-page text-ink flex min-h-full flex-col">{children}</body>
     </html>
   );
 }

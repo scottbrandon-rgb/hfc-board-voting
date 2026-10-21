@@ -1,114 +1,144 @@
 # Production Checklist — HFC Board Voting Platform
 
-Everything here requires a human to complete in an external dashboard.
-Code changes are tracked in git; these are one-time platform configurations.
+Everything here is done by a person in an external dashboard. Code changes
+are tracked in git; these are one-time platform settings.
+
+---
+
+## Deploying the unanimous-voting update (migration 015)
+
+This release changes the voting rules (unanimous online approval, Aye or
+Discuss in person) and moves those rules into the database. **The database
+change must be applied before the new code goes live**, and the old code
+cannot vote once the migration is applied. Do the two steps back to back, at
+a quiet time:
+
+1. **Confirm migrations 012–014 are applied** (Supabase → Database →
+   Migrations, or run `select * from supabase_migrations.schema_migrations`).
+2. **Apply `supabase/migrations/015_unanimous_voting.sql`** in the Supabase
+   SQL editor (or `supabase db push`). It is one transaction: it either applies
+   completely or not at all.
+   - Motions already decided keep their old results, labelled "(previous rules)".
+   - Motions in progress switch to the new rules. A vote already open gets a
+     deadline of five days after it opened, or one day from now if later.
+     Earlier Nay/Abstain ballots count as "not Aye"; members can change them.
+3. **Merge to `main` right away.** Netlify builds and deploys in about three
+   minutes. Until it finishes, voting on the old site shows an error. Nothing
+   is lost or recorded wrongly, because the database refuses it.
+4. Check `https://board.harrisonfaith.church/api/health` returns `{"ok":true}`.
+
+### Then, on the Board page (signed in as chair)
+
+- **Retire the "Test" member** (bigbodyscotty@gmail.com) and **reactivate the
+  five real voting members**. The page should read "All five voting seats are
+  filled." (Migration 005 turned the real members off for testing.)
+- Set the secretary's role if it is not already set.
+- Set the next meeting date on the Meeting page.
 
 ---
 
 ## Supabase
 
 ### ✅ Already done
+
 - RLS enabled on all tables
 - Both storage buckets private (`motion-attachments`, `motion-pdfs`)
-- Migrations applied through `011_rls_hardening.sql`
-- Magic link / OTP auth enabled
+- Email OTP (8-digit code) sign-in
 
-### 🔲 Enable Point-in-Time Recovery (PITR)
-Supabase Free/Pro includes daily backups. PITR requires Pro plan.
-Dashboard → Project → Settings → Database → Backups → Enable PITR
+### 🔲 Turn off public sign-ups (security)
 
-### 🔲 Configure Auth rate limits
-Dashboard → Project → Auth → Rate Limits
-Recommended settings:
-- OTP expiry: 3600 seconds (1 hour) ← already set by default
-- Email rate limit: 5 per hour per IP (default)
-- No changes required unless abuse is observed
+Dashboard → Authentication → Sign In / Providers → **Allow new users to sign up: off**.
+The app now creates sign-in accounts itself when the chair adds a member, and
+the sign-in form never creates accounts, so turning this off stops anyone else
+from registering an account in the project.
 
-### 🔲 Add redirect URL to Supabase Auth allowlist
-Dashboard → Project → Auth → URL Configuration
-Add: `https://board.harrisonfaith.church/auth/callback`
-Verify `Site URL` is set to: `https://board.harrisonfaith.church`
+### 🔲 Backups (recommended: Pro plan)
+
+The project's logs keep only about a day of history, which suggests the Free
+plan. Free has no downloadable backups and pauses after a week of inactivity.
+For a permanent board record, upgrade to Pro (daily backups; add
+Point-in-Time Recovery if desired).
+Dashboard → Project Settings → Billing / Database → Backups.
+
+### 🔲 Auth URL configuration
+
+Dashboard → Authentication → URL Configuration
+
+- Site URL: `https://board.harrisonfaith.church`
+- Redirect URLs: `https://board.harrisonfaith.church/auth/callback`
 
 ---
 
 ## Resend
 
-### 🔲 Verify sending domain
-Resend requires DNS verification before sending from `board@harrisonfaith.org`.
+### 🔲 Verify the sending domain
 
-1. Log in to resend.com → Domains → Add Domain → `harrisonfaith.org`
-2. Add the provided DNS records (DKIM, SPF, DMARC) to your DNS provider
-3. Wait for verification (usually < 5 minutes)
-4. Confirm `RESEND_FROM_EMAIL=board@harrisonfaith.org` is set on Netlify
+1. resend.com → Domains → Add Domain → `harrisonfaith.org`
+2. Add the DKIM, SPF and DMARC records it lists at your DNS provider
+3. Confirm `RESEND_FROM_EMAIL=board@harrisonfaith.org` is set on Netlify
 
-Until the domain is verified, Resend will reject sends from that address.
-Temporary workaround: set `RESEND_FROM_EMAIL=onboarding@resend.dev` (Resend's default sender).
+Until the domain is verified, Resend rejects mail from that address.
 
 ---
 
 ## Netlify
 
 ### ✅ Already done
-- GitHub repo connected, auto-deploy on push to `main`
-- Custom domain `board.harrisonfaith.church` configured
-- All required env vars set (verify at: Netlify → Site → Environment Variables):
-  - `NEXT_PUBLIC_SUPABASE_URL`
-  - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-  - `SUPABASE_SERVICE_ROLE_KEY`
-  - `RESEND_API_KEY`
-  - `RESEND_FROM_EMAIL`
-  - `APP_URL`
-  - `NEXT_PUBLIC_APP_URL`
-  - `CRON_SECRET`
 
-### 🔲 Enable branch deploy protection (optional)
-Netlify → Site → Site Configuration → Visitor Access
-Set password or SSO for non-production branch deploys so preview URLs
-are not accessible without authentication.
+- GitHub connected; `main` auto-deploys
+- Custom domain `board.harrisonfaith.church`
+- Environment variables: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`,
+  `SUPABASE_SERVICE_ROLE_KEY`, `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, `APP_URL`,
+  `NEXT_PUBLIC_APP_URL`, `CRON_SECRET`, optionally `TIMEZONE` (default `America/Chicago`)
+
+### 🔲 Confirm the scheduled job runs
+
+Netlify → Logs → Functions → `cron-background-jobs`. Every 15 minutes it
+closes votes past their deadline and sends reminders. Before this update
+every run failed (the request was redirected to the sign-in page). Each run
+should now log `{"ok":true,...}`. A failing run is logged as an error.
+
+### 🔲 Watch it (recommended)
+
+Add a free uptime monitor (for example UptimeRobot) on
+`https://board.harrisonfaith.church/api/health`, alerting by email when it is
+not 200.
+
+### 🔲 Protect preview deploys (optional)
+
+Netlify → Site configuration → Visitor access: require a password on
+non-production deploys.
 
 ---
 
-## DNS / Domain
-
-### 🔲 Verify HTTPS certificate
-Netlify auto-provisions Let's Encrypt. Confirm:
-- `https://board.harrisonfaith.church` loads with a valid cert
-- HTTP redirects to HTTPS (Netlify handles this by default)
-
----
-
-## Health Check
-
-After every deploy, verify the platform is healthy:
+## Health check
 
 ```
 curl https://board.harrisonfaith.church/api/health
 ```
 
-Expected response (HTTP 200):
-```json
-{
-  "ok": true,
-  "checks": {
-    "NEXT_PUBLIC_SUPABASE_URL": true,
-    "SUPABASE_SERVICE_ROLE_KEY": true,
-    ...
-    "db": "ok (N active members)",
-    "storage_attachments": "ok (private)",
-    "storage_pdfs": "ok (private)"
-  }
-}
+Publicly it returns only `{"ok":true|false,"timestamp":…}`. For the details,
+send the cron secret:
+
 ```
+curl -H "Authorization: Bearer $CRON_SECRET" https://board.harrisonfaith.church/api/health
+```
+
+The details cover each setting, the database, the voting-rules migration and
+both storage buckets (they must be private).
 
 ---
 
-## Go-Live Checklist
+## Go-live checklist
 
-- [ ] Supabase Auth redirect URL allowlist updated
-- [ ] Resend domain DNS records added and verified
-- [ ] All Netlify env vars confirmed present (run `/api/health`)
-- [ ] Test full magic link flow end-to-end in production browser
-- [ ] Create at least one test motion through full lifecycle (draft → ratified)
-- [ ] Confirm PDF download works for chair and secretary
-- [ ] Confirm background jobs cron is active (Netlify → Functions → Scheduled)
-- [ ] Add all board members to the Members table
+- [ ] Migration 015 applied, then `main` deployed
+- [ ] `/api/health` returns ok (and `voting_rules_migration: ok` in the detailed view)
+- [ ] Public sign-ups off in Supabase
+- [ ] Test member retired; five voting members active; secretary set
+- [ ] Resend domain verified
+- [ ] One motion taken through the whole process: draft → publish → move →
+      second → five Ayes (approved) → ratified at the meeting; PDF downloads
+- [ ] One motion referred (a "Discuss in person" vote, or the chair's Refer)
+      and its outcome recorded on the Meeting page
+- [ ] Scheduled job logging `ok: true` every 15 minutes
+- [ ] Each member signs in once on their phone (and adds it to the Home Screen)

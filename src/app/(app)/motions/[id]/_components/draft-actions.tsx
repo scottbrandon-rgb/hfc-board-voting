@@ -1,96 +1,72 @@
 'use client';
 
-import { useActionState, useState } from 'react';
-import { Button } from '@/components/ui/button';
-import { publishDraft, deleteDraft, type ActionState } from '../actions';
+import { useState, useTransition } from 'react';
+import Link from 'next/link';
+import { Button, buttonVariants } from '@/components/ui/button';
+import { Sheet } from '@/components/board/sheet';
+import { ErrorText } from '@/components/board/ui';
+import { deleteDraft, publishDraft } from '../actions';
+import { cn } from '@/lib/utils';
 
-interface Props {
-  motionId: string;
-  isChair: boolean;
-}
+/** Chair: edit, publish or delete a draft. Publishing emails the board, so it asks first. */
+export function DraftActions({ motionId, className }: { motionId: string; className?: string }) {
+  const [confirm, setConfirm] = useState<'publish' | 'delete' | null>(null);
+  const [pending, start] = useTransition();
+  const [error, setError] = useState<string | null>(null);
 
-const idle: ActionState = { status: 'idle' };
-
-export function DraftActions({ motionId, isChair }: Props) {
-  const [publishState, publishAction, publishPending] = useActionState(
-    publishDraft.bind(null, motionId),
-    idle,
-  );
-  const [deleteState, deleteAction, deletePending] = useActionState(
-    deleteDraft.bind(null, motionId),
-    idle,
-  );
-
-  const [confirmDelete, setConfirmDelete] = useState(false);
-  const anyPending = publishPending || deletePending;
-
-  if (!isChair) {
-    return (
-      <p className="text-muted-foreground text-sm">
-        This motion is a draft and has not been published yet.
-      </p>
-    );
-  }
+  const run = (kind: 'publish' | 'delete') =>
+    start(async () => {
+      setError(null);
+      const result =
+        kind === 'publish' ? await publishDraft(motionId) : await deleteDraft(motionId);
+      if (result?.status === 'error') setError(result.message);
+      else setConfirm(null);
+    });
 
   return (
-    <div className="space-y-3">
-      <p className="text-muted-foreground text-sm">
-        This motion is saved as a draft. Publish it to make it visible to all board members and open
-        it for motions.
-      </p>
-
-      <div className="flex flex-wrap items-center gap-3">
-        {/* Publish */}
-        <form action={publishAction}>
-          <Button type="submit" disabled={anyPending}>
-            {publishPending ? 'Publishing…' : 'Publish motion'}
-          </Button>
-        </form>
-
-        {/* Delete — two-step confirm */}
-        {!confirmDelete ? (
-          <button
-            type="button"
-            onClick={() => setConfirmDelete(true)}
-            disabled={anyPending}
-            className="text-muted-foreground hover:text-destructive text-sm underline-offset-2 hover:underline disabled:opacity-50"
-          >
-            Delete draft
-          </button>
-        ) : (
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium">Are you sure?</span>
-            <form action={deleteAction}>
-              <button
-                type="submit"
-                disabled={anyPending}
-                className="text-destructive text-sm font-medium underline-offset-2 hover:underline disabled:opacity-50"
-              >
-                {deletePending ? 'Deleting…' : 'Yes, delete'}
-              </button>
-            </form>
-            <button
-              type="button"
-              onClick={() => setConfirmDelete(false)}
-              disabled={anyPending}
-              className="text-muted-foreground text-sm underline-offset-2 hover:underline disabled:opacity-50"
-            >
-              Cancel
-            </button>
-          </div>
-        )}
+    <div className={cn('flex flex-col gap-2', className)}>
+      <div className="grid grid-cols-2 gap-2.5">
+        <Link
+          href={`/motions/${motionId}/edit`}
+          className={buttonVariants({ variant: 'outline', size: 'lg' })}
+        >
+          Edit
+        </Link>
+        <Button size="lg" onClick={() => setConfirm('publish')}>
+          Publish
+        </Button>
       </div>
+      <button
+        type="button"
+        onClick={() => setConfirm('delete')}
+        className="text-danger min-h-11 text-base font-semibold"
+      >
+        Delete draft
+      </button>
 
-      {publishState.status === 'error' && (
-        <p className="text-destructive text-sm" role="alert">
-          {publishState.message}
-        </p>
-      )}
-      {deleteState.status === 'error' && (
-        <p className="text-destructive text-sm" role="alert">
-          {deleteState.message}
-        </p>
-      )}
+      <Sheet
+        open={confirm !== null}
+        onOpenChange={(open) => !open && setConfirm(null)}
+        title={confirm === 'delete' ? 'Delete this draft?' : 'Publish to the board?'}
+        description={
+          confirm === 'delete'
+            ? 'The draft and its documents are removed. This cannot be undone.'
+            : 'Every board member is emailed and asked to move and second it. Its text can no longer be edited.'
+        }
+      >
+        {error && <ErrorText>{error}</ErrorText>}
+        <Button
+          size="lg"
+          variant={confirm === 'delete' ? 'destructive' : 'default'}
+          disabled={pending}
+          onClick={() => confirm && run(confirm)}
+        >
+          {pending ? 'Working…' : confirm === 'delete' ? 'Delete draft' : 'Publish'}
+        </Button>
+        <Button size="lg" variant="ghost" onClick={() => setConfirm(null)}>
+          Cancel
+        </Button>
+      </Sheet>
     </div>
   );
 }

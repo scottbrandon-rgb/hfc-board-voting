@@ -1,74 +1,81 @@
 'use client';
 
-import { useActionState, useEffect, useRef, useState } from 'react';
+import { useActionState, useState } from 'react';
+import { Pencil } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { Sheet } from '@/components/board/sheet';
+import { SubmitButton } from '@/components/board/submit-button';
+import { ErrorText } from '@/components/board/ui';
 import { updateDisplayName, type ProfileState } from './actions';
 
-const initialState: ProfileState = { status: 'idle' };
+const idle: ProfileState = { status: 'idle' };
 
+/** The member's name as the board sees it, edited in a bottom sheet. */
 export function EditNameForm({ currentName }: { currentName: string }) {
-  const [editing, setEditing] = useState(false);
-  const [state, formAction, pending] = useActionState(updateDisplayName, initialState);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const [open, setOpen] = useState(false);
+  const [session, setSession] = useState(0);
 
-  useEffect(() => {
-    if (editing) inputRef.current?.focus();
-  }, [editing]);
-
-  useEffect(() => {
-    if (state.status === 'success') setEditing(false);
-  }, [state.status]);
-
-  if (!editing) {
-    return (
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-muted-foreground text-xs tracking-wide uppercase">Name</p>
-          <p className="text-sm">{currentName}</p>
-        </div>
-        <button
-          type="button"
-          onClick={() => setEditing(true)}
-          className="text-xs font-medium text-neutral-500 underline-offset-2 hover:text-neutral-900 hover:underline"
-        >
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => {
+          setSession((n) => n + 1);
+          setOpen(true);
+        }}
+        className="focus-visible:ring-brand/40 flex min-h-14 w-full items-center gap-3 rounded-xl text-left outline-none focus-visible:ring-3"
+      >
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="text-caption text-ink-3">Name</span>
+          <span className="text-body truncate font-semibold">{currentName}</span>
+        </span>
+        <span className="text-brand text-small inline-flex items-center gap-1.5 font-semibold">
+          <Pencil className="size-4" aria-hidden="true" />
           Edit
-        </button>
+        </span>
+      </button>
+      <Sheet
+        open={open}
+        onOpenChange={setOpen}
+        title="Your name"
+        description="Shown to the board on votes and comments."
+      >
+        <NameForm key={session} currentName={currentName} onDone={() => setOpen(false)} />
+      </Sheet>
+    </>
+  );
+}
+
+function NameForm({ currentName, onDone }: { currentName: string; onDone: () => void }) {
+  const [state, action] = useActionState(updateDisplayName, idle);
+
+  if (state.status === 'success') {
+    return (
+      <div role="status" className="flex flex-col gap-4">
+        <p className="text-body">Your name is updated.</p>
+        <Button size="lg" onClick={onDone}>
+          Done
+        </Button>
       </div>
     );
   }
 
   return (
-    <form action={formAction} className="space-y-2">
-      <p className="text-muted-foreground text-xs tracking-wide uppercase">Name</p>
-      <div className="flex items-center gap-2">
-        <input
-          ref={inputRef}
-          name="full_name"
-          type="text"
-          defaultValue={currentName}
-          required
-          maxLength={80}
-          disabled={pending}
-          className="flex-1 rounded-md border border-neutral-300 px-3 py-2 text-sm focus:border-neutral-500 focus:outline-none focus:ring-1 focus:ring-neutral-500 disabled:opacity-50"
-        />
-        <button
-          type="submit"
-          disabled={pending}
-          className="rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50"
-        >
-          {pending ? 'Saving…' : 'Save'}
-        </button>
-        <button
-          type="button"
-          onClick={() => setEditing(false)}
-          disabled={pending}
-          className="text-sm text-neutral-500 hover:text-neutral-800 disabled:opacity-50"
-        >
-          Cancel
-        </button>
-      </div>
-      {state.status === 'error' && (
-        <p className="text-destructive text-xs" role="alert">{state.message}</p>
-      )}
+    <form action={action} className="flex flex-col gap-3">
+      <label htmlFor="full_name" className="text-base font-semibold">
+        Full name
+      </label>
+      <Input
+        id="full_name"
+        name="full_name"
+        defaultValue={currentName}
+        required
+        maxLength={80}
+        autoComplete="name"
+      />
+      {state.status === 'error' && <ErrorText>{state.message}</ErrorText>}
+      <SubmitButton size="lg">Save name</SubmitButton>
     </form>
   );
 }

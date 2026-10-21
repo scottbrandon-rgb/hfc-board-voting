@@ -1,51 +1,40 @@
-import Image from 'next/image';
+import { Monogram } from '@/components/board/ui';
+import { safeNext } from '@/lib/safe-next';
 import { LoginForm } from './login-form';
 
-export const metadata = {
-  title: 'Sign in — Harrison Faith Board Voting',
+export const metadata = { title: 'Sign in' };
+
+const NOTICES: Record<string, string> = {
+  inactive:
+    'Your board membership is no longer active, so you have been signed out. If this is a mistake, ask the chair.',
+  missing_code: 'That sign-in link was incomplete. Enter your email to get a code instead.',
+  link_expired: 'That sign-in link has expired. Enter your email to get a code instead.',
 };
 
-export default function LoginPage() {
+function one(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+}) {
+  const params = await searchParams;
+  const noticeKey = one(params.notice) ?? one(params.error);
+  const notice = noticeKey ? (NOTICES[noticeKey] ?? null) : null;
+
   return (
-    <main
-      className="flex min-h-dvh items-center justify-center px-4 py-10"
-      style={{ background: 'var(--background-subtle)' }}
-    >
-      <div
-        className="w-full max-w-sm rounded-2xl bg-white p-10"
-        style={{ boxShadow: '0 4px 24px rgba(0,0,0,0.06)', border: '1px solid var(--border)' }}
-      >
-        {/* Logo + wordmark */}
-        <div className="mb-8 flex flex-col items-center gap-3">
-          <Image
-            src="/hfc-logo.jpg"
-            alt="Harrison Faith Church"
-            width={64}
-            height={64}
-            priority
-            className="rounded-full"
-          />
-          <div className="text-center">
-            <h1
-              className="text-lg font-semibold tracking-tight"
-              style={{ color: 'var(--foreground)', letterSpacing: '-0.03em' }}
-            >
-              Harrison Faith
-            </h1>
-            <p className="text-sm" style={{ color: 'var(--foreground-muted)' }}>
-              Deacon Board Voting
-            </p>
+    <main className="bg-page flex min-h-dvh flex-col items-center px-5 pt-[max(3rem,env(safe-area-inset-top))] pb-10 sm:justify-center sm:pt-10">
+      <div className="flex w-full max-w-sm flex-col gap-8">
+        <div className="flex flex-col items-center gap-3 text-center">
+          <Monogram size={64} />
+          <div className="flex flex-col gap-1">
+            <h1 className="text-heading font-bold tracking-tight">Deacon Board</h1>
+            <p className="text-body text-ink-3">Harrison Faith Church</p>
           </div>
         </div>
-
-        {/* Divider */}
-        <div className="mb-6" style={{ borderTop: '1px solid var(--border)' }} />
-
-        <p className="mb-5 text-sm" style={{ color: 'var(--foreground-muted)' }}>
-          Enter your board email and we&rsquo;ll send you an 8-digit sign-in code.
-        </p>
-
-        <LoginForm />
+        <LoginForm next={safeNext(one(params.next))} notice={notice} />
       </div>
     </main>
   );

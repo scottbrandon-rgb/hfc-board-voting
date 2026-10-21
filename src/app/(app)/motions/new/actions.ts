@@ -1,15 +1,17 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { redirect } from 'next/navigation';
-import { headers } from 'next/headers';
-import { requireChair } from '@/lib/dal';
+import { requireChair, friendlyError } from '@/lib/dal';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { nextMotionNumber, sha256Hex } from '@/lib/motions';
-import { notifyMotionPublished } from '@/lib/email';
+import {
+  DEFAULT_VOTING_PERIOD,
+  MAX_ATTACHMENTS,
+  MAX_ATTACHMENT_BYTES as MAX_FILE_BYTES,
+  VOTING_PERIOD_CHOICES,
+} from '@/lib/rules';
 
-const MAX_FILE_BYTES = 25 * 1024 * 1024; // 25 MB
-const MAX_ATTACHMENTS = 4;
+const BUCKET = 'motion-attachments';
 const ALLOWED_MIME = new Set([
   'application/pdf',
   'application/msword',
@@ -24,151 +26,186 @@ const ALLOWED_MIME = new Set([
   'text/markdown',
 ]);
 
-export type CreateMotionState = { status: 'idle' } | { status: 'error'; message: string };
+export type Result<T = object> = ({ ok: true } & T) | { ok: false; message: string };
+
+export interface MotionDraftInput {
+  motionId?: string;
+  title: string;
+  description: string;
+  background: string;
+  votingPeriodDays: number;
+}
 
 function safeFileName(name: string): string {
-  // Storage paths can't have slashes/backslashes; trim and replace exotic chars
   return name
     .replace(/[\\/]/g, '_')
     .replace(/[^\w.\-() ]/g, '_')
-    .slice(0, 200);
+    .slice(0, 120);
 }
 
-export async function createMotion(
-  _prev: CreateMotionState,
-  formData: FormData,
-): Promise<CreateMotionState> {
+async function loadDraft(motionId: string) {
+  const admin = createAdminClient();
+  const { data } = await admin
+    .from('motions')
+    .select('id, status')
+    .eq('id', motionId)
+    .maybeSingle();
+  return data;
+}
+
+/** Creates a draft, or updates one. Text can change only while it is a draft. */
+export async function saveMotion(input: MotionDraftInput): Promise<Result<{ motionId: string }>> {
   const chair = await requireChair();
 
-  const title = (formData.get('title') as string | null)?.trim() ?? '';
-  const description = (formData.get('description') as string | null)?.trim() ?? '';
-  const publish = formData.get('publish') === 'true';
-  const files = formData
-    .getAll('attachments')
-    .filter((f): f is File => f instanceof File && f.size > 0);
+  const title = input.title.trim();
+  const description = input.description.trim();
+  const background = input.background.trim();
+  const days = (VOTING_PERIOD_CHOICES as readonly number[]).includes(input.votingPeriodDays)
+    ? input.votingPeriodDays
+    : DEFAULT_VOTING_PERIOD;
 
-  if (!title) return { status: 'error', message: 'Title is required.' };
-  if (title.length > 200)
-    return { status: 'error', message: 'Title must be 200 characters or fewer.' };
-  if (!description) return { status: 'error', message: 'Description is required.' };
-  if (files.length > MAX_ATTACHMENTS)
-    return { status: 'error', message: `Maximum ${MAX_ATTACHMENTS} attachments per motion.` };
-
-  for (const file of files) {
-    if (file.size > MAX_FILE_BYTES) {
-      return { status: 'error', message: `"${file.name}" exceeds the 25 MB limit.` };
-    }
-    if (!ALLOWED_MIME.has(file.type)) {
-      return {
-        status: 'error',
-        message: `"${file.name}" has an unsupported type (${file.type || 'unknown'}). PDFs, Office docs, and images only.`,
-      };
-    }
-  }
+  if (!title) return { ok: false, message: 'Add a title.' };
+  if (title.length > 200) return { ok: false, message: 'Keep the title under 200 characters.' };
+  if (!description) return { ok: false, message: 'Add the motion text.' };
+  if (description.length > 10000) return { ok: false, message: 'The motion text is too long.' };
+  if (background.length > 10000) return { ok: false, message: 'The background is too long.' };
 
   const admin = createAdminClient();
-  const headerList = await headers();
-  const ipAddress = headerList.get('x-forwarded-for')?.split(',')[0]?.trim() || null;
-  const userAgent = headerList.get('user-agent') || null;
 
-  // 1. Reserve motion number and insert the motion row
-  const motionNumber = await nextMotionNumber(admin);
-  const status = publish ? 'open' : 'draft';
-  const publishedAt = publish ? new Date().toISOString() : null;
+  if (input.motionId) {
+    const draft = await loadDraft(input.motionId);
+    if (!draft) return { ok: false, message: 'Motion not found.' };
+    if (draft.status !== 'draft') return { ok: false, message: 'Only drafts can be edited.' };
+    const { error } = await admin
+      .from('motions')
+      .update({ title, description, background: background || null, voting_period_days: days })
+      .eq('id', input.motionId);
+    if (error) return { ok: false, message: friendlyError(error) };
+    revalidatePath(`/motions/${input.motionId}`);
+    return { ok: true, motionId: input.motionId };
+  }
 
-  const { data: motion, error: insertError } = await admin
-    .from('motions')
-    .insert({
-      motion_number: motionNumber,
-      title,
-      description,
-      status,
-      created_by: chair.id,
-      published_at: publishedAt,
-    })
-    .select('id, motion_number, title')
-    .single();
+  // The motion number is unique; retry once if two drafts race for it.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const motionNumber = await nextMotionNumber(admin);
+    const { data, error } = await admin
+      .from('motions')
+      .insert({
+        motion_number: motionNumber,
+        title,
+        description,
+        background: background || null,
+        voting_period_days: days,
+        status: 'draft',
+        rules: 'unanimous_v1',
+        created_by: chair.id,
+      })
+      .select('id')
+      .single();
+    if (!error && data) {
+      await admin.from('audit_log').insert({
+        motion_id: data.id,
+        member_id: chair.id,
+        event_type: 'created',
+        event_data: { motion_number: motionNumber },
+      });
+      revalidatePath('/');
+      return { ok: true, motionId: data.id };
+    }
+    if (error?.code !== '23505') return { ok: false, message: friendlyError(error) };
+  }
+  return { ok: false, message: 'Could not number the motion. Please try again.' };
+}
 
-  if (insertError || !motion) {
+/** A one-time upload link so the browser sends the file straight to storage. */
+export async function prepareUpload(
+  motionId: string,
+  file: { name: string; size: number; type: string },
+): Promise<Result<{ path: string; token: string }>> {
+  await requireChair();
+  const draft = await loadDraft(motionId);
+  if (!draft) return { ok: false, message: 'Motion not found.' };
+  if (draft.status !== 'draft')
+    return { ok: false, message: 'Documents can only be added to a draft.' };
+  if (file.size > MAX_FILE_BYTES)
+    return { ok: false, message: `"${file.name}" is over the 25 MB limit.` };
+  if (!ALLOWED_MIME.has(file.type)) {
     return {
-      status: 'error',
-      message: `Could not create motion: ${insertError?.message ?? 'unknown error'}`,
+      ok: false,
+      message: `"${file.name}" isn't a supported type. Use PDF, Word, Excel or a photo.`,
     };
   }
 
-  // 2. Upload attachments
-  for (const file of files) {
-    const buffer = await file.arrayBuffer();
-    const fileHash = await sha256Hex(buffer);
-    const safeName = safeFileName(file.name);
-    const storagePath = `motions/${motion.id}/${fileHash.slice(0, 12)}-${safeName}`;
+  const admin = createAdminClient();
+  const { count } = await admin
+    .from('motion_attachments')
+    .select('id', { count: 'exact', head: true })
+    .eq('motion_id', motionId);
+  if ((count ?? 0) >= MAX_ATTACHMENTS) {
+    return { ok: false, message: `A motion can have up to ${MAX_ATTACHMENTS} documents.` };
+  }
 
-    const { error: uploadError } = await admin.storage
-      .from('motion-attachments')
-      .upload(storagePath, buffer, {
-        contentType: file.type,
-        upsert: false,
-      });
+  const path = `motions/${motionId}/${crypto.randomUUID().slice(0, 8)}-${safeFileName(file.name)}`;
+  const { data, error } = await admin.storage.from(BUCKET).createSignedUploadUrl(path);
+  if (error || !data) return { ok: false, message: friendlyError(error) };
+  return { ok: true, path: data.path, token: data.token };
+}
 
-    if (uploadError) {
-      return {
-        status: 'error',
-        message: `Uploaded the motion but failed on "${file.name}": ${uploadError.message}. Edit the draft to retry.`,
-      };
-    }
+/** Records an uploaded document, fingerprinting it from storage. */
+export async function registerAttachment(
+  motionId: string,
+  upload: { path: string; name: string },
+): Promise<Result<{ attachmentId: string; size: number }>> {
+  const chair = await requireChair();
+  if (!upload.path.startsWith(`motions/${motionId}/`))
+    return { ok: false, message: 'Invalid upload.' };
+  const draft = await loadDraft(motionId);
+  if (!draft || draft.status !== 'draft')
+    return { ok: false, message: 'Documents can only be added to a draft.' };
 
-    const { error: attachError } = await admin.from('motion_attachments').insert({
-      motion_id: motion.id,
-      storage_path: storagePath,
-      file_name: file.name,
-      file_size: file.size,
-      content_type: file.type,
-      file_hash: fileHash,
+  const admin = createAdminClient();
+  const { data: blob, error: dlError } = await admin.storage.from(BUCKET).download(upload.path);
+  if (dlError || !blob)
+    return { ok: false, message: `"${upload.name}" did not finish uploading. Try again.` };
+  if (blob.size > MAX_FILE_BYTES) {
+    await admin.storage.from(BUCKET).remove([upload.path]);
+    return { ok: false, message: `"${upload.name}" is over the 25 MB limit.` };
+  }
+
+  const { data: row, error } = await admin
+    .from('motion_attachments')
+    .insert({
+      motion_id: motionId,
+      storage_path: upload.path,
+      file_name: upload.name.slice(0, 200),
+      file_size: blob.size,
+      content_type: blob.type || 'application/octet-stream',
+      file_hash: await sha256Hex(await blob.arrayBuffer()),
       uploaded_by: chair.id,
-    });
+    })
+    .select('id')
+    .single();
+  if (error || !row) return { ok: false, message: friendlyError(error) };
+  revalidatePath(`/motions/${motionId}`);
+  return { ok: true, attachmentId: row.id, size: blob.size };
+}
 
-    if (attachError) {
-      return {
-        status: 'error',
-        message: `Attachment metadata save failed for "${file.name}": ${attachError.message}.`,
-      };
-    }
+export async function removeAttachment(attachmentId: string): Promise<Result> {
+  await requireChair();
+  const admin = createAdminClient();
+  const { data: att } = await admin
+    .from('motion_attachments')
+    .select('id, motion_id, storage_path')
+    .eq('id', attachmentId)
+    .maybeSingle();
+  if (!att) return { ok: false, message: 'Document not found.' };
+  const draft = await loadDraft(att.motion_id);
+  if (!draft || draft.status !== 'draft') {
+    return { ok: false, message: 'Documents can only be removed from a draft.' };
   }
-
-  // 3. Audit log
-  await admin.from('audit_log').insert([
-    {
-      motion_id: motion.id,
-      member_id: chair.id,
-      event_type: 'created',
-      event_data: { motion_number: motion.motion_number, attachment_count: files.length },
-      ip_address: ipAddress,
-      user_agent: userAgent,
-    },
-    ...(publish
-      ? [
-          {
-            motion_id: motion.id,
-            member_id: chair.id,
-            event_type: 'published',
-            event_data: { motion_number: motion.motion_number },
-            ip_address: ipAddress,
-            user_agent: userAgent,
-          },
-        ]
-      : []),
-  ]);
-
-  // If published immediately, notify all active members
-  if (publish) {
-    const { data: allMembers } = await admin
-      .from('members')
-      .select('email')
-      .eq('is_active', true);
-    const emails = (allMembers ?? []).map((m) => m.email);
-    void notifyMotionPublished(emails, motion.id, motion.motion_number, motion.title);
-  }
-
-  revalidatePath('/');
-  redirect(`/motions/${motion.id}`);
+  const { error } = await admin.from('motion_attachments').delete().eq('id', attachmentId);
+  if (error) return { ok: false, message: friendlyError(error) };
+  await admin.storage.from(BUCKET).remove([att.storage_path]);
+  revalidatePath(`/motions/${att.motion_id}`);
+  return { ok: true };
 }

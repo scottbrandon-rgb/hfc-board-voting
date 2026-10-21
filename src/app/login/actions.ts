@@ -1,57 +1,53 @@
 'use server';
 
 import { createAdminClient } from '@/lib/supabase/admin';
+import { escapeLike } from '@/lib/utils';
+import { ensureAuthUser } from '@/lib/auth-users';
 
 export type LoginState =
   | { status: 'idle' }
-  | { status: 'allowed'; email: string }   // allowlist OK — client will send OTP
-  | { status: 'sent'; email: string }       // OTP sent (set by client after success)
+  | { status: 'allowed'; email: string } // on the board list — the browser asks for the code
   | { status: 'error'; message: string };
 
-const ALLOWLIST_ERROR =
-  'That email is not authorized for the Harrison Faith Board Voting. If you believe this is a mistake, contact Scott Brandon.';
+const NOT_ON_LIST =
+  "That email isn't on the Deacon Board list. Check the spelling, or ask the chair to add you.";
 
 function isValidEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
 /**
- * Server action: validates email format and checks the members allowlist.
- * Does NOT call signInWithOtp — that happens client-side so the browser owns
- * the PKCE code verifier, ensuring the magic link works when clicked.
+ * Checks the board list. The code itself is requested from the browser so the
+ * browser holds the sign-in session; this step makes sure the member has a
+ * sign-in account first, because the browser may not create one.
  */
 export async function checkAllowlist(_prev: LoginState, formData: FormData): Promise<LoginState> {
   const rawEmail = formData.get('email');
   if (typeof rawEmail !== 'string' || !rawEmail.trim()) {
-    return { status: 'error', message: 'Please enter your email address.' };
+    return { status: 'error', message: 'Enter your email address.' };
   }
   const email = rawEmail.trim().toLowerCase();
-
   if (!isValidEmail(email)) {
-    return { status: 'error', message: 'Please enter a valid email address.' };
-  }
-
-  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
-    console.error('[login] missing SUPABASE_SERVICE_ROLE_KEY');
-    return { status: 'error', message: 'Server configuration error. Contact admin.' };
+    return { status: 'error', message: 'Enter a valid email address.' };
   }
 
   const admin = createAdminClient();
-  const { data: member, error: lookupError } = await admin
+  const { data: member, error } = await admin
     .from('members')
     .select('id')
-    .ilike('email', email)
+    .ilike('email', escapeLike(email))
     .eq('is_active', true)
     .maybeSingle();
 
-  if (lookupError) {
-    console.error('[login] allowlist lookup failed:', lookupError);
-    return { status: 'error', message: `Lookup error: ${lookupError.message}` };
+  if (error) {
+    console.error('[login] board list lookup failed:', error);
+    return {
+      status: 'error',
+      message: "We couldn't check the board list just now. Please try again.",
+    };
   }
-  if (!member) {
-    return { status: 'error', message: ALLOWLIST_ERROR };
-  }
+  if (!member) return { status: 'error', message: NOT_ON_LIST };
 
-  // Email is on the allowlist — client will call signInWithOtp
+  await ensureAuthUser(email);
   return { status: 'allowed', email };
 }

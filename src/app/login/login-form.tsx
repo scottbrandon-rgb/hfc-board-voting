@@ -1,149 +1,269 @@
 'use client';
 
-import { useActionState, useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { Mail } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { checkAllowlist, type LoginState } from './actions';
+import { ErrorText } from '@/components/board/ui';
 import { createClient } from '@/lib/supabase/client';
+import { checkAllowlist } from './actions';
 
-const initialState: LoginState = { status: 'idle' };
+// The email waiting for a code survives the phone reloading this page while
+// the member switches to their mail app to read the code.
+const PENDING_KEY = 'hfc-login-pending';
+const CODE_LIFETIME_MS = 60 * 60 * 1000;
+const RESEND_AFTER_S = 60;
 
-export function LoginForm() {
-  const [state, formAction, pending] = useActionState(checkAllowlist, initialState);
+interface Pending {
+  email: string;
+  sentAt: number;
+}
 
-  // Local state for the code-entry step.
-  const [codeSent, setCodeSent] = useState(false);
-  const [sentEmail, setSentEmail] = useState('');
-  const [sendError, setSendError] = useState<string | null>(null);
-  const [code, setCode] = useState('');
-  const [verifying, setVerifying] = useState(false);
-  const [verifyError, setVerifyError] = useState<string | null>(null);
+function readPending(): Pending | null {
+  try {
+    const raw = window.sessionStorage.getItem(PENDING_KEY);
+    if (!raw) return null;
+    const p = JSON.parse(raw) as Pending;
+    return typeof p.email === 'string' && Date.now() - p.sentAt < CODE_LIFETIME_MS ? p : null;
+  } catch {
+    return null;
+  }
+}
 
-  // Once the allowlist check passes, send a one-time code (not a magic link)
-  // from the browser. verifyOtp exchanges the typed code for a session, so
-  // email link scanners can't consume the login before the user acts.
+function writePending(p: Pending | null) {
+  try {
+    if (p) window.sessionStorage.setItem(PENDING_KEY, JSON.stringify(p));
+    else window.sessionStorage.removeItem(PENDING_KEY);
+  } catch {
+    // Private browsing: the member just enters their email again if the page reloads.
+  }
+}
+
+function sendErrorMessage(message: string): string {
+  const m = message.toLowerCase();
+  if (m.includes('rate') || m.includes('seconds') || m.includes('security purposes')) {
+    return 'A code was sent a moment ago. Wait a minute, then try again.';
+  }
+  return "We couldn't send a code just now. Please try again in a minute.";
+}
+
+export function LoginForm({ next, notice }: { next: string; notice: string | null }) {
+  const [pending, setPending] = useState<Pending | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
   useEffect(() => {
-    if (state.status !== 'allowed') return;
+    // sessionStorage exists only in the browser, after hydration.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setPending(readPending());
+  }, []);
 
-    const supabase = createClient();
-    supabase.auth
-      .signInWithOtp({
-        email: state.email,
-        options: { shouldCreateUser: true },
-      })
-      .then(({ error }) => {
-        if (error) {
-          setSendError(`Could not send sign-in code: ${error.message}`);
-        } else {
-          setSentEmail(state.email);
-          setCodeSent(true);
-        }
-      });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.status]);
-
-  async function handleVerify(e: React.FormEvent) {
-    e.preventDefault();
-    setVerifyError(null);
-    const token = code.trim();
-    if (token.length < 8) {
-      setVerifyError('Enter the 8-digit code from your email.');
-      return;
-    }
-    setVerifying(true);
-    const supabase = createClient();
-    const { error } = await supabase.auth.verifyOtp({
-      email: sentEmail,
-      token,
-      type: 'email',
+  async function sendCode(email: string): Promise<boolean> {
+    const { error: sendError } = await createClient().auth.signInWithOtp({
+      email,
+      // Accounts are created by the board list, never by the sign-in form.
+      options: { shouldCreateUser: false },
     });
-    if (error) {
-      setVerifying(false);
-      setVerifyError(
-        error.message.toLowerCase().includes('expired')
-          ? 'That code has expired. Request a new one below.'
-          : 'That code is incorrect. Double-check and try again.',
-      );
-      return;
+    if (sendError) {
+      setError(sendErrorMessage(sendError.message));
+      return false;
     }
-    // Session cookies are now set — full navigation lets the server pick them up.
-    window.location.assign('/');
+    const p = { email, sentAt: Date.now() };
+    writePending(p);
+    setPending(p);
+    return true;
   }
 
-  // ── Step 2: enter the emailed code ──────────────────────────────────────────
-  if (codeSent) {
+  async function onEmailSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setError(null);
+    setBusy(true);
+    const result = await checkAllowlist({ status: 'idle' }, new FormData(e.currentTarget));
+    if (result.status === 'allowed') await sendCode(result.email);
+    else if (result.status === 'error') setError(result.message);
+    setBusy(false);
+  }
+
+  if (pending) {
     return (
-      <form onSubmit={handleVerify} className="space-y-4">
-        <div className="space-y-2 text-center">
-          <h2 className="text-lg font-semibold">Enter your code</h2>
-          <p className="text-muted-foreground text-sm">
-            We emailed an 8-digit code to <span className="font-medium">{sentEmail}</span>. Enter it
-            below to sign in.
-          </p>
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="code">8-digit code</Label>
-          <Input
-            id="code"
-            name="code"
-            inputMode="numeric"
-            autoComplete="one-time-code"
-            pattern="[0-9]*"
-            maxLength={8}
-            required
-            autoFocus
-            placeholder="12345678"
-            value={code}
-            onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
-            className="text-center text-lg tracking-[0.4em]"
-          />
-        </div>
-        {verifyError && (
-          <p className="text-destructive text-sm" role="alert">
-            {verifyError}
-          </p>
-        )}
-        <Button type="submit" className="h-11 w-full" disabled={verifying}>
-          {verifying ? 'Signing in…' : 'Verify & sign in'}
-        </Button>
-        <p className="text-muted-foreground text-center text-xs">
-          The code expires in 1 hour. Didn&apos;t get it? Check spam, or{' '}
-          <button type="button" className="underline" onClick={() => window.location.reload()}>
-            start over
-          </button>
-          .
-        </p>
-      </form>
+      <CodeStep
+        pending={pending}
+        next={next}
+        onResend={() => sendCode(pending.email)}
+        onDifferentEmail={() => {
+          writePending(null);
+          setPending(null);
+          setError(null);
+        }}
+        resendError={error}
+      />
     );
   }
 
-  // ── Step 1: enter email ─────────────────────────────────────────────────────
-  const errorMsg = sendError ?? (state.status === 'error' ? state.message : null);
-
   return (
-    <form action={formAction} className="space-y-4">
-      <div className="space-y-2">
-        <Label htmlFor="email">Email</Label>
+    <form onSubmit={onEmailSubmit} className="flex flex-col gap-4">
+      {notice && (
+        <p
+          role="status"
+          className="bg-warn-soft text-warn text-small rounded-xl px-4 py-3 font-medium"
+        >
+          {notice}
+        </p>
+      )}
+      <div className="flex flex-col gap-2">
+        <label htmlFor="email" className="text-base font-semibold">
+          Your board email
+        </label>
         <Input
           id="email"
           name="email"
           type="email"
           inputMode="email"
           autoComplete="email"
+          autoCapitalize="none"
           required
-          autoFocus
-          placeholder="you@harrisonfaith.org"
+          placeholder="you@example.com"
         />
       </div>
-      {errorMsg && (
-        <p className="text-destructive text-sm" role="alert">
-          {errorMsg}
+      {error && <ErrorText>{error}</ErrorText>}
+      <Button type="submit" size="lg" disabled={busy}>
+        {busy ? 'Sending code…' : 'Email me a sign-in code'}
+      </Button>
+      <p className="text-small text-ink-3 text-center">
+        No password needed. We&apos;ll email you an 8-digit code.
+      </p>
+    </form>
+  );
+}
+
+function CodeStep({
+  pending,
+  next,
+  onResend,
+  onDifferentEmail,
+  resendError,
+}: {
+  pending: Pending;
+  next: string;
+  onResend: () => Promise<boolean>;
+  onDifferentEmail: () => void;
+  resendError: string | null;
+}) {
+  const [code, setCode] = useState('');
+  const [verifying, setVerifying] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [resent, setResent] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
+  const inputRef = useRef<HTMLInputElement>(null);
+  const wait = Math.max(0, RESEND_AFTER_S - Math.floor((now - pending.sentAt) / 1000));
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    if (wait === 0) return;
+    const t = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(t);
+  }, [wait]);
+
+  async function verify(token: string) {
+    if (verifying) return;
+    if (token.length !== 8) {
+      setError('Enter all 8 digits from the email.');
+      return;
+    }
+    setError(null);
+    setVerifying(true);
+    const { error: verifyError } = await createClient().auth.verifyOtp({
+      email: pending.email,
+      token,
+      type: 'email',
+    });
+    if (verifyError) {
+      setVerifying(false);
+      setError(
+        verifyError.message.toLowerCase().includes('expired')
+          ? 'That code has expired, or a newer one was sent. Use the latest code, or send a new one.'
+          : "That code didn't work. Check the digits and try again.",
+      );
+      return;
+    }
+    writePending(null);
+    // A full page load lets the server see the new sign-in.
+    window.location.assign(next);
+  }
+
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        void verify(code);
+      }}
+      className="flex flex-col gap-4"
+    >
+      <div className="flex flex-col items-center gap-2 text-center">
+        <span className="bg-brand-soft text-brand flex size-12 items-center justify-center rounded-full">
+          <Mail className="size-6" aria-hidden="true" />
+        </span>
+        <h2 className="text-title font-bold">Check your email</h2>
+        <p className="text-body text-ink-2">
+          We sent an 8-digit code to
+          <br />
+          <strong className="text-ink [overflow-wrap:anywhere]">{pending.email}</strong>
+        </p>
+      </div>
+      <label htmlFor="code" className="sr-only">
+        8-digit code
+      </label>
+      <Input
+        ref={inputRef}
+        id="code"
+        name="code"
+        inputMode="numeric"
+        autoComplete="one-time-code"
+        pattern="[0-9]*"
+        maxLength={8}
+        required
+        placeholder="••••••••"
+        value={code}
+        disabled={verifying}
+        onChange={(e) => {
+          const digits = e.target.value.replace(/\D/g, '').slice(0, 8);
+          setCode(digits);
+          if (digits.length === 8) void verify(digits);
+        }}
+        className="h-16 text-center font-mono text-[28px] tracking-[0.3em]"
+      />
+      {(error ?? resendError) && <ErrorText>{error ?? resendError}</ErrorText>}
+      {resent && !resendError && wait > 0 && (
+        <p role="status" className="text-small text-good text-center font-medium">
+          A new code is on its way. Use the newest email.
         </p>
       )}
-      <Button type="submit" className="h-11 w-full" disabled={pending || state.status === 'allowed'}>
-        {pending || state.status === 'allowed' ? 'Sending code…' : 'Send sign-in code'}
+      <Button type="submit" size="lg" disabled={verifying}>
+        {verifying ? 'Signing in…' : 'Sign in'}
       </Button>
+      <div className="flex flex-col items-center gap-1">
+        <Button
+          type="button"
+          variant="ghost"
+          disabled={wait > 0 || verifying}
+          onClick={async () => {
+            setError(null);
+            setResent(await onResend());
+            setNow(Date.now());
+          }}
+        >
+          {wait > 0 ? `Send a new code in ${wait}s` : 'Send a new code'}
+        </Button>
+        <Button type="button" variant="ghost" disabled={verifying} onClick={onDifferentEmail}>
+          Use a different email
+        </Button>
+      </div>
+      <p className="text-small text-ink-3 text-center">
+        The code works for one hour. Not in your inbox? Check spam or junk.
+      </p>
     </form>
   );
 }

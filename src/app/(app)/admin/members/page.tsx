@@ -1,146 +1,98 @@
+import Link from 'next/link';
+import { ChevronRight, User } from 'lucide-react';
 import { requireChair } from '@/lib/dal';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { AddMemberForm } from './_components/add-member-form';
-import { MemberRowActions } from './_components/member-row-actions';
+import { isVotingRole, type Role } from '@/lib/rules';
+import { Card, EmptyState, PageTitle, SectionHeading } from '@/components/board/ui';
+import { MobileBrand } from '@/components/board/nav';
+import { AddMemberButton } from './_components/add-member-form';
+import { MemberRow, type MemberRowData } from './_components/member-sheet';
 
-export const dynamic = 'force-dynamic';
+export const metadata = { title: 'Board' };
 
-const ROLE_LABELS: Record<string, string> = {
-  chair: 'Chair',
-  secretary: 'Secretary',
-  member: 'Member',
-};
+const ROLE_ORDER: Record<Role, number> = { chair: 0, secretary: 1, member: 2 };
 
-export default async function AdminMembersPage() {
-  const currentMember = await requireChair();
+/** The bylaws seat five voting members plus the chair. */
+const VOTING_SEATS = 5;
+
+export default async function BoardPage() {
+  const me = await requireChair();
   const admin = createAdminClient();
+  const { data } = await admin.from('members').select('id, full_name, email, role, is_active');
 
-  const { data: members } = await admin
-    .from('members')
-    .select('id, full_name, email, role, is_active, created_at')
-    .order('role', { ascending: true })
-    .order('full_name', { ascending: true });
+  const members = ((data ?? []) as MemberRowData[]).sort(
+    (a, b) => ROLE_ORDER[a.role] - ROLE_ORDER[b.role] || a.full_name.localeCompare(b.full_name),
+  );
+  const active = members.filter((m) => m.is_active);
+  const retired = members.filter((m) => !m.is_active);
+  const voting = active.filter((m) => isVotingRole(m.role)).length;
 
-  const active = (members ?? []).filter((m) => m.is_active);
-  const inactive = (members ?? []).filter((m) => !m.is_active);
+  const seatNote =
+    voting < 3
+      ? 'Fewer than three voting members: online votes cannot open (no quorum).'
+      : voting < VOTING_SEATS
+        ? `${VOTING_SEATS - voting} voting seat${VOTING_SEATS - voting === 1 ? ' is' : 's are'} vacant. Online approval needs an Aye from every seated voting member.`
+        : voting > VOTING_SEATS
+          ? `More than ${VOTING_SEATS} voting members are active. The bylaws seat five; retire anyone who has left.`
+          : 'All five voting seats are filled.';
 
   return (
-    <main className="mx-auto w-full max-w-2xl space-y-5 px-4 py-6">
-      {/* ── Header ─────────────────────────────────────────────────────── */}
-      <div>
-        <p className="text-muted-foreground text-xs font-medium tracking-wide">Admin</p>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight">Board Members</h1>
-        <p className="text-muted-foreground mt-1 text-sm">
-          {active.length} active · {inactive.length} inactive
-        </p>
+    <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-5 pt-4 md:px-8 md:pt-8">
+      <MobileBrand />
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <PageTitle subtitle={`${voting} voting member${voting === 1 ? '' : 's'} plus the chair`}>
+          Board
+        </PageTitle>
+        <AddMemberButton />
       </div>
 
-      {/* ── Add member ─────────────────────────────────────────────────── */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Add member</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <AddMemberForm />
-        </CardContent>
-      </Card>
+      <p
+        className={
+          voting === VOTING_SEATS
+            ? 'bg-good-soft text-good text-small rounded-xl px-4 py-3 font-medium'
+            : 'bg-warn-soft text-warn text-small rounded-xl px-4 py-3 font-medium'
+        }
+      >
+        {seatNote}
+      </p>
 
-      {/* ── Active members ─────────────────────────────────────────────── */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Active</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {active.length === 0 ? (
-            <p className="text-muted-foreground text-sm">No active members.</p>
-          ) : (
-            <ul className="divide-y">
-              {active.map((m) => {
-                const initial = m.full_name.trim().charAt(0).toUpperCase() || '?';
-                const isSelf = m.id === currentMember.id;
-                return (
-                  <li
-                    key={m.id}
-                    className="flex items-start justify-between gap-3 py-3 first:pt-0 last:pb-0"
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-neutral-900 text-sm font-semibold text-white">
-                        {initial}
-                      </div>
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium">
-                          {m.full_name}
-                          {isSelf && (
-                            <span className="text-muted-foreground ml-1.5 text-xs font-normal">(you)</span>
-                          )}
-                        </p>
-                        <p className="text-muted-foreground truncate text-xs">{m.email}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-start gap-3 shrink-0">
-                      <span className="mt-0.5 rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-700">
-                        {ROLE_LABELS[m.role] ?? m.role}
-                      </span>
-                      <MemberRowActions
-                        memberId={m.id}
-                        isActive={m.is_active}
-                        role={m.role}
-                        email={m.email}
-                        isSelf={isSelf}
-                      />
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
+      <section aria-labelledby="active" className="flex flex-col gap-3">
+        <SectionHeading id="active">Active</SectionHeading>
+        {active.length === 0 ? (
+          <EmptyState>No active members.</EmptyState>
+        ) : (
+          <Card className="divide-line divide-y p-0">
+            {active.map((m) => (
+              <MemberRow key={m.id} member={m} isSelf={m.id === me.id} />
+            ))}
+          </Card>
+        )}
+      </section>
 
-      {/* ── Inactive members ───────────────────────────────────────────── */}
-      {inactive.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base text-neutral-500">Inactive</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ul className="divide-y">
-              {inactive.map((m) => {
-                const initial = m.full_name.trim().charAt(0).toUpperCase() || '?';
-                return (
-                  <li
-                    key={m.id}
-                    className="flex items-start justify-between gap-3 py-3 first:pt-0 last:pb-0 opacity-60"
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-neutral-300 text-sm font-semibold text-neutral-600">
-                        {initial}
-                      </div>
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium">{m.full_name}</p>
-                        <p className="text-muted-foreground truncate text-xs">{m.email}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-start gap-3 shrink-0">
-                      <span className="mt-0.5 rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-500">
-                        {ROLE_LABELS[m.role] ?? m.role}
-                      </span>
-                      <MemberRowActions
-                        memberId={m.id}
-                        isActive={m.is_active}
-                        role={m.role}
-                        email={m.email}
-                        isSelf={false}
-                      />
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          </CardContent>
-        </Card>
+      {retired.length > 0 && (
+        <section aria-labelledby="retired" className="flex flex-col gap-3">
+          <SectionHeading id="retired">Retired</SectionHeading>
+          <Card className="divide-line divide-y p-0">
+            {retired.map((m) => (
+              <MemberRow key={m.id} member={m} isSelf={false} />
+            ))}
+          </Card>
+        </section>
       )}
+
+      <Link
+        href="/profile"
+        className="border-line focus-visible:ring-brand/40 flex min-h-[72px] items-center gap-3.5 rounded-2xl border bg-white px-4 py-3 outline-none focus-visible:ring-3 md:hidden"
+      >
+        <span className="bg-chip text-ink-2 flex size-11 items-center justify-center rounded-full">
+          <User className="size-5" aria-hidden="true" />
+        </span>
+        <span className="flex flex-1 flex-col">
+          <span className="text-body font-semibold">Your profile</span>
+          <span className="text-small text-ink-2">Name, email settings, sign out</span>
+        </span>
+        <ChevronRight className="text-ink-3 size-5" aria-hidden="true" />
+      </Link>
     </main>
   );
 }

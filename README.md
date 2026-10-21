@@ -1,36 +1,57 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# HFC Deacon Board
 
-## Getting Started
+Motions, online votes and meeting records for the Harrison Faith Church Deacon
+Board. Next.js 16 (App Router) on Netlify, Supabase (Postgres, auth, storage),
+Resend for email.
 
-First, run the development server:
+## Online voting rules
+
+- Five voting members (including the secretary) plus the chair. The chair does
+  not move, second or vote online, but writes motions, calls for a motion,
+  sends reminders and can refer any motion to the in-person meeting (with a
+  note).
+- A published motion needs a mover and a different seconder. Seconding opens
+  voting for the chosen period (3, 5 or 7 days), if at least three voting
+  members are seated.
+- Each member votes **Aye** or **Discuss in person** (with an optional reason).
+  Votes are visible to the board as they are cast and can be changed until
+  voting closes.
+- Approval online is unanimous: the moment every seated voting member has
+  voted Aye, the motion is approved. Anything else at the deadline sends it to
+  the in-person meeting. Approved motions are ratified at the next meeting.
+
+The rules are enforced in the database (`supabase/migrations/015_unanimous_voting.sql`):
+server actions call functions that only the service role can run, and
+triggers keep the record append-only. `src/lib/rules.ts` holds the shared
+labels and calculations.
+
+## Development
 
 ```bash
+cp .env.local.example .env.local   # fill in Supabase, Resend and CRON_SECRET
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Checks
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npm run lint
+npx tsc --noEmit
+npm test          # unit tests (Node's built-in test runner)
+npm run test:db   # applies every migration to a scratch local PostgreSQL
+                  # database and runs the voting-engine tests
+                  # (needs psql; set PGURL if not postgres:postgres@localhost)
+npm run build
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+`npm run icons` redraws the HF app icons.
 
-## Learn More
+## Background jobs
 
-To learn more about Next.js, take a look at the following resources:
+`netlify/functions/cron-background-jobs.mts` runs every 15 minutes and calls
+`POST /api/cron/background-jobs` with `Authorization: Bearer $CRON_SECRET`.
+It closes votes past their deadline and sends reminders about 24 hours and
+4 hours before a deadline.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+See `PRODUCTION.md` for deployment steps and dashboard settings.

@@ -7,8 +7,9 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ['@react-pdf/renderer'],
   experimental: {
     serverActions: {
-      // Allow up to ~110MB per submission (4 attachments × 25MB + form overhead)
-      bodySizeLimit: '110mb',
+      // Attachments upload straight to storage from the browser, so form
+      // submissions are small. A low limit keeps oversized requests out.
+      bodySizeLimit: '2mb',
     },
   },
 

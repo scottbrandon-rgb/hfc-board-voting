@@ -4,25 +4,17 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/*
+ * Design tokens — see the mobile-first design proposal.
+ * Every text color passes 4.5:1 on white; body text is 17px; nothing is
+ * smaller than 14px; form fields are 16px or larger so phones never zoom.
+ */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
   --font-mono: ui-monospace, monospace;
   --font-heading: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
-  --color-sidebar-ring: var(--sidebar-ring);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar: var(--sidebar);
-  --color-chart-5: var(--chart-5);
-  --color-chart-4: var(--chart-4);
-  --color-chart-3: var(--chart-3);
-  --color-chart-2: var(--chart-2);
-  --color-chart-1: var(--chart-1);
   --color-ring: var(--ring);
   --color-input: var(--input);
   --color-border: var(--border);
@@ -46,102 +38,89 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
+
+  /* Board palette */
+  --color-ink: #16191d;
+  --color-ink-2: #3f454c;
+  --color-ink-3: #5b6168;
+  --color-page: #f4f5f7;
+  --color-line: #e1e4e8;
+  --color-line-strong: #c9ced4;
+  --color-faint: #8a9097;
+  --color-chip: #eef0f2;
+  --color-brand: #1f4fbf;
+  --color-brand-ink: #163c93;
+  --color-brand-soft: #e8eefb;
+  --color-good: #13643f;
+  --color-good-soft: #e4f3ea;
+  --color-good-bar: #1e7a4c;
+  --color-warn: #8a3f06;
+  --color-warn-soft: #fceedf;
+  --color-warn-bar: #e08a2e;
+  --color-danger: #a42a1c;
+  --color-danger-soft: #fbeae7;
+
+  /* Type scale */
+  --text-caption: 0.875rem;
+  --text-caption--line-height: 1.25rem;
+  --text-small: 0.9375rem;
+  --text-small--line-height: 1.375rem;
+  --text-body: 1.0625rem;
+  --text-body--line-height: 1.625rem;
+  --text-title: 1.25rem;
+  --text-title--line-height: 1.625rem;
+  --text-heading: 1.625rem;
+  --text-heading--line-height: 2rem;
+  --text-display: 1.75rem;
+  --text-display--line-height: 2.125rem;
 }
 
 :root {
-  /* ── HFC Design Tokens ─────────────────────────────────────────────── */
-  --background: oklch(0.99 0.002 250);
-  --background-subtle: oklch(0.965 0.003 250);
-  --foreground: oklch(0.13 0.005 265);
-  --foreground-muted: oklch(0.48 0.008 255);
-  --foreground-subtle: oklch(0.68 0.006 255);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.13 0.005 265);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.13 0.005 265);
-  --primary: oklch(0.50 0.16 255);
-  --primary-foreground: oklch(1 0 0);
-  --secondary: oklch(0.965 0.003 250);
-  --secondary-foreground: oklch(0.13 0.005 265);
-  --muted: oklch(0.955 0.004 250);
-  --muted-foreground: oklch(0.48 0.008 255);
-  --accent: oklch(0.94 0.05 255);
-  --accent-foreground: oklch(0.50 0.16 255);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.90 0.004 255);
-  --border-strong: oklch(0.78 0.008 255);
-  --input: oklch(0.90 0.004 255);
-  --ring: oklch(0.50 0.16 255);
-  --radius: 0.5rem;
-  --sidebar: oklch(0.965 0.003 250);
-  --sidebar-foreground: oklch(0.13 0.005 265);
-  --sidebar-primary: oklch(0.50 0.16 255);
-  --sidebar-primary-foreground: oklch(1 0 0);
-  --sidebar-accent: oklch(0.94 0.05 255);
-  --sidebar-accent-foreground: oklch(0.50 0.16 255);
-  --sidebar-border: oklch(0.90 0.004 255);
-  --sidebar-ring: oklch(0.50 0.16 255);
-  /* Semantic color scales */
-  --emerald-bg: oklch(0.95 0.04 155);
-  --emerald-fg: oklch(0.32 0.10 155);
-  --red-bg: oklch(0.96 0.04 25);
-  --red-fg: oklch(0.40 0.13 25);
-  --amber-bg: oklch(0.97 0.05 85);
-  --amber-fg: oklch(0.40 0.12 70);
-  --blue-bg: oklch(0.95 0.04 255);
-  --blue-fg: oklch(0.36 0.12 255);
-  --purple-bg: oklch(0.95 0.04 300);
-  --purple-fg: oklch(0.36 0.12 300);
-  /* chart */
-  --chart-1: oklch(0.50 0.16 255);
-  --chart-2: oklch(0.32 0.10 155);
-  --chart-3: oklch(0.40 0.13 25);
-  --chart-4: oklch(0.40 0.12 70);
-  --chart-5: oklch(0.36 0.12 300);
-}
-
-.dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --background: #f4f5f7;
+  --foreground: #16191d;
+  --card: #ffffff;
+  --card-foreground: #16191d;
+  --popover: #ffffff;
+  --popover-foreground: #16191d;
+  --primary: #1f4fbf;
+  --primary-foreground: #ffffff;
+  --secondary: #ffffff;
+  --secondary-foreground: #16191d;
+  --muted: #eef0f2;
+  --muted-foreground: #5b6168;
+  --accent: #e8eefb;
+  --accent-foreground: #1f4fbf;
+  --destructive: #a42a1c;
+  --border: #e1e4e8;
+  --input: #c9ced4;
+  --ring: #1f4fbf;
+  --radius: 0.75rem;
 }
 
 @layer base {
   * {
     @apply border-border outline-ring/50;
   }
-  body {
-    @apply bg-background text-foreground;
-  }
   html {
     @apply font-sans;
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-page text-ink;
+  }
+  /* Phones zoom into fields smaller than 16px. */
+  input,
+  textarea,
+  select {
+    font-size: max(16px, 1em);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
   }
 }
