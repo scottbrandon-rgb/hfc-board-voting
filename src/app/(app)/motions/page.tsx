@@ -124,7 +124,7 @@ export default async function MotionsPage({
                 chip={<StatusChip info={chip} />}
                 number={m.motion_number}
                 title={m.title}
-                detail={detail}
+                detail={m.archived_at ? `${detail} · Archived` : detail}
               />
             );
           })}

@@ -48,6 +48,7 @@ export interface MotionSummary {
   created_at: string;
   referral_reason: string | null;
   last_call_sent_at: string | null;
+  archived_at: string | null;
 }
 
 export interface VoteSnapshot {
@@ -61,7 +62,7 @@ export interface VoteSnapshot {
 }
 
 const SUMMARY_COLUMNS =
-  'id, motion_number, title, status, rules, moved_by, voting_deadline, published_at, moved_at, decided_at, created_at, referral_reason, last_call_sent_at';
+  'id, motion_number, title, status, rules, moved_by, voting_deadline, published_at, moved_at, decided_at, created_at, referral_reason, last_call_sent_at, archived_at';
 
 async function supabase() {
   return createClient();
@@ -153,11 +154,13 @@ export async function getHomeData(viewer: CurrentMember): Promise<HomeData> {
       db
         .from('motions')
         .select('id', { count: 'exact', head: true })
-        .in('status', [...AGENDA_STATUSES]),
+        .in('status', [...AGENDA_STATUSES])
+        .is('archived_at', null),
       db
         .from('motions')
         .select('id', { count: 'exact', head: true })
-        .in('status', [...TO_RATIFY_STATUSES]),
+        .in('status', [...TO_RATIFY_STATUSES])
+        .is('archived_at', null),
     ]);
 
   const all = motions ?? [];
@@ -274,11 +277,13 @@ export async function getMeetingData(viewer: CurrentMember) {
         .from('motions')
         .select(`${SUMMARY_COLUMNS}, referral_note, referred_by, in_person_note, meeting_date`)
         .in('status', [...AGENDA_STATUSES])
+        .is('archived_at', null)
         .order('referred_at', { ascending: true }),
       db
         .from('motions')
         .select(`${SUMMARY_COLUMNS}, electorate_size`)
         .in('status', [...TO_RATIFY_STATUSES])
+        .is('archived_at', null)
         .order('decided_at', { ascending: true }),
       db.from('motions').select(SUMMARY_COLUMNS).eq('status', 'voting'),
     ]);

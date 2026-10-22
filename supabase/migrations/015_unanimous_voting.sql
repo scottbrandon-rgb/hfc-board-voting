@@ -35,6 +35,7 @@ do $$
 declare
   v_voters int;
   v_pending int;
+  v_missing text;
 begin
   select count(*) into v_voters
     from public.members
@@ -47,11 +48,56 @@ begin
       'Migration 015 stopped: % motion(s) are seconded or voting, but only % voting member(s) are active. Activate the board''s voting members (and deactivate test accounts) first, then run this migration again. Nothing was changed.',
       v_pending, v_voters;
   end if;
+
+  -- Archived motions (see below) need their status from before archiving.
+  select string_agg(m.motion_number, ', ' order by m.motion_number) into v_missing
+    from public.motions m
+   where m.status = 'archived'
+     and coalesce((
+       select a.event_data ->> 'previous_status'
+         from public.audit_log a
+        where a.motion_id = m.id and a.event_type = 'archived'
+        order by a.created_at desc
+        limit 1
+     ), '') not in (
+       'decided_passed', 'decided_failed', 'decided_deferred',
+       'ratified', 'withdrawn', 'died_no_motion', 'died_no_second'
+     );
+  if v_missing is not null then
+    raise exception
+      'Migration 015 stopped: archived motion(s) % have no recorded status from before they were archived. Set each one''s status to its real outcome, then run this migration again. Nothing was changed.',
+      v_missing;
+  end if;
 end $$;
 
 -- ─── Motions ──────────────────────────────────────────────────────────────────
 
 alter table public.motions drop constraint if exists motions_status_check;
+
+-- Archiving hides a finished motion; it is not an outcome. The previous app
+-- archived by overwriting the status with 'archived' (production allowed it
+-- outside the migrations) and recorded the real status in the audit log as
+-- previous_status. Give those motions their outcome back and keep the
+-- archive as a marker. (The preflight stops the migration if any earlier
+-- status cannot be found, rather than guess.)
+alter table public.motions
+  add column if not exists archived_at timestamptz,
+  add column if not exists archived_by uuid references public.members(id);
+
+update public.motions m
+   set status = a.previous_status,
+       archived_at = a.created_at,
+       archived_by = a.member_id
+  from (
+    select distinct on (motion_id)
+           motion_id, event_data ->> 'previous_status' as previous_status, created_at, member_id
+      from public.audit_log
+     where event_type = 'archived'
+     order by motion_id, created_at desc
+  ) a
+ where m.id = a.motion_id
+   and m.status = 'archived';
+
 alter table public.motions add constraint motions_status_check check (status in (
   'draft', 'open', 'moved', 'seconded', 'voting',
   'approved', 'referred', 'ratified', 'decided_in_person', 'withdrawn',
@@ -938,6 +984,12 @@ begin
   if old.motion_text_hash is not null
      and new.motion_text_hash is distinct from old.motion_text_hash then
     raise exception 'A motion''s fingerprint cannot change once voting has opened.';
+  end if;
+  if new.archived_at is not null and old.archived_at is null and new.status not in (
+    'ratified', 'decided_in_person', 'withdrawn',
+    'decided_passed', 'decided_failed', 'decided_deferred', 'died_no_motion', 'died_no_second'
+  ) then
+    raise exception 'Only finished motions can be archived.';
   end if;
 
   if new.status = old.status then

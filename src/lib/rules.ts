@@ -208,6 +208,22 @@ export function isFinal(status: string): boolean {
   ].includes(status);
 }
 
+/** Finished motions the chair may archive (hide from the meeting lists). */
+export const ARCHIVABLE_STATUSES: readonly string[] = [
+  'ratified',
+  'decided_in_person',
+  'withdrawn',
+  'decided_passed',
+  'decided_failed',
+  'decided_deferred',
+  'died_no_motion',
+  'died_no_second',
+];
+
+export function canArchive(status: string): boolean {
+  return ARCHIVABLE_STATUSES.includes(status);
+}
+
 /** Members may comment until a motion is finally settled. */
 export function commentsOpen(status: string): boolean {
   return status !== 'draft' && !isFinal(status) && !LEGACY_STATUSES.includes(status);

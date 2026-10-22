@@ -231,6 +231,8 @@ export type Database = {
       };
       motions: {
         Row: {
+          archived_at: string | null;
+          archived_by: string | null;
           background: string | null;
           deadline_extended_at: string | null;
           deadline_extension_note: string | null;
@@ -271,6 +273,8 @@ export type Database = {
           withdrawn_at: string | null;
         };
         Insert: {
+          archived_at?: string | null;
+          archived_by?: string | null;
           background?: string | null;
           deadline_extended_at?: string | null;
           deadline_extension_note?: string | null;
@@ -311,6 +315,8 @@ export type Database = {
           withdrawn_at?: string | null;
         };
         Update: {
+          archived_at?: string | null;
+          archived_by?: string | null;
           background?: string | null;
           deadline_extended_at?: string | null;
           deadline_extension_note?: string | null;

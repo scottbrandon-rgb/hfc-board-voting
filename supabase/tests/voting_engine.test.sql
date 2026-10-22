@@ -345,7 +345,25 @@ begin
   assert tests.chair() = v_old, 'chair restored';
 end $$;
 
--- ─── 17. Direct access from a member's session (Data API) ───────────────────
+-- ─── 17. Archiving hides a finished motion without changing its outcome ─────
+do $$
+declare
+  m public.motions;
+  v_id uuid;
+begin
+  select * into m from public.motions where id = '00000000-0000-0000-0000-0000000000b5';
+  assert m.status = 'decided_failed', 'archived motion gets its outcome back from the audit log';
+  assert m.archived_at is not null and m.archived_by = tests.chair(), 'archive kept as a marker';
+
+  v_id := tests.new_vote('HFC-T17');
+  perform tests.expect_error(format('update public.motions set archived_at = now() where id = %L', v_id),
+    'Only finished motions');
+  update public.motions set archived_at = null where id = m.id;
+  update public.motions set archived_at = now() where id = m.id;
+  assert (select status from public.motions where id = m.id) = 'decided_failed', 'outcome unchanged';
+end $$;
+
+-- ─── 18. Direct access from a member's session (Data API) ───────────────────
 reset role;
 grant usage on schema tests to authenticated;
 set role authenticated;

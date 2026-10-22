@@ -27,6 +27,23 @@ a quiet time:
    Decide what to do with any test motions first: before the migration they
    can still be deleted; afterwards only drafts can be.
 
+   **Archived motions.** The previous app archived a motion by overwriting
+   its status with `archived` and logging the real status. The migration
+   restores each one's real outcome from that log and keeps "archived" as a
+   separate marker (hidden from the meeting lists; the chair can unarchive).
+   Preview what each will become:
+
+   ```sql
+   select m.motion_number, m.title,
+          (select a.event_data ->> 'previous_status' from public.audit_log a
+            where a.motion_id = m.id and a.event_type = 'archived'
+            order by a.created_at desc limit 1) as restored_status
+     from public.motions m where m.status = 'archived';
+   ```
+
+   If any `restored_status` is empty, the migration stops and names the
+   motion; set its status to the real outcome first.
+
 3. **Set the board's real voting members before the migration.** The migration
    freezes today's active voting members as the voters on any motion that is
    seconded or voting. Migration 005 switched the five real members off for

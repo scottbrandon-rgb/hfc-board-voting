@@ -49,3 +49,24 @@ insert into public.motions (id, motion_number, title, description, status, creat
 select '00000000-0000-0000-0000-0000000000b4', 'HFC-2026-004', 'Legacy open', 'Open text',
   'open', id, now() - interval '1 hour'
 from public.members where role = 'chair' and is_active;
+
+-- Archived by the previous app, as production holds it: that app overwrote the
+-- status with 'archived' (allowed by a constraint changed outside the
+-- migrations) and logged the real status as previous_status.
+alter table public.motions drop constraint if exists motions_status_check;
+alter table public.motions add constraint motions_status_check check (status in (
+  'draft','open','moved','seconded','voting',
+  'decided_passed','decided_failed','decided_deferred',
+  'withdrawn','died_no_motion','died_no_second','ratified','archived'
+));
+
+insert into public.motions (id, motion_number, title, description, status, result,
+  created_by, published_at, decided_at)
+select '00000000-0000-0000-0000-0000000000b5', 'HFC-2026-005', 'Legacy archived', 'Archived text',
+  'archived', 'failed', id, now() - interval '60 days', now() - interval '55 days'
+from public.members where role = 'chair' and is_active;
+
+insert into public.audit_log (motion_id, member_id, event_type, event_data, created_at)
+select '00000000-0000-0000-0000-0000000000b5', id, 'archived',
+  '{"motion_number": "HFC-2026-005", "previous_status": "decided_failed"}', now() - interval '50 days'
+from public.members where role = 'chair' and is_active;

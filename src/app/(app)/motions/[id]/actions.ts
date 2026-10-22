@@ -5,7 +5,7 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { requireMember, requireChair, requestContext, friendlyError } from '@/lib/dal';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { commentsOpen, type BallotChoice, type BallotReason } from '@/lib/rules';
+import { canArchive, commentsOpen, type BallotChoice, type BallotReason } from '@/lib/rules';
 import {
   notifyCall,
   notifyComment,
@@ -281,6 +281,48 @@ export async function sendCall(motionId: string): Promise<ActionState> {
           ? 'Call for a second sent.'
           : 'Call for a motion sent.',
   };
+}
+
+/**
+ * Chair: archive (hide from the meeting lists) or restore a finished motion.
+ * The outcome and record are unchanged; the motion stays in the Motions list.
+ */
+export async function setArchived(motionId: string, archived: boolean): Promise<ActionState> {
+  const chair = await requireChair();
+  const admin = createAdminClient();
+  const { data: motion } = await admin
+    .from('motions')
+    .select('status, motion_number, archived_at')
+    .eq('id', motionId)
+    .maybeSingle();
+  if (!motion) return { status: 'error', message: 'Motion not found.' };
+  if (archived && !canArchive(motion.status)) {
+    return { status: 'error', message: 'Only finished motions can be archived.' };
+  }
+  if (!!motion.archived_at === archived) return { status: 'success' };
+
+  const { error } = await admin
+    .from('motions')
+    .update(
+      archived
+        ? { archived_at: new Date().toISOString(), archived_by: chair.id }
+        : { archived_at: null, archived_by: null },
+    )
+    .eq('id', motionId);
+  if (error) return { status: 'error', message: friendlyError(error) };
+
+  const ctx = await requestContext();
+  await admin.from('audit_log').insert({
+    motion_id: motionId,
+    member_id: chair.id,
+    event_type: archived ? 'archived' : 'unarchived',
+    event_data: { motion_number: motion.motion_number, status: motion.status },
+    ip_address: ctx.p_ip,
+    user_agent: ctx.p_user_agent,
+  });
+
+  refresh(motionId);
+  return { status: 'success' };
 }
 
 // ─── Discussion ──────────────────────────────────────────────────────────────

@@ -12,6 +12,7 @@ import {
 } from '@/lib/queries';
 import { getPdfSignedUrl, PDF_STATUSES } from '@/lib/generate-pdf';
 import {
+  canArchive,
   commentsOpen,
   inPersonResultLabel,
   isVotingRole,
@@ -38,6 +39,7 @@ import { CallButton } from '@/components/board/call-button';
 import { VoteButton } from './_components/vote-sheet';
 import { ProcedureButton } from './_components/procedure-actions';
 import { ExtendButton, ReferButton } from './_components/chair-tools';
+import { ArchiveButton } from './_components/archive-button';
 import { DraftActions } from './_components/draft-actions';
 import { CommentForm } from './_components/comment-form';
 import { cn } from '@/lib/utils';
@@ -117,7 +119,10 @@ export default async function MotionPage({ params }: { params: Promise<{ id: str
         {/* Main column */}
         <div className="flex min-w-0 flex-col gap-5 pt-2 md:pt-0">
           <section className="flex flex-col gap-2.5">
-            <StatusChip info={chip} className="self-start" />
+            <div className="flex flex-wrap items-center gap-2">
+              <StatusChip info={chip} />
+              {motion.archived_at && <Chip tone="neutral">Archived</Chip>}
+            </div>
             <h1 className="text-heading font-bold tracking-tight md:text-[34px] md:leading-10">
               {motion.title}
             </h1>
@@ -246,6 +251,10 @@ export default async function MotionPage({ params }: { params: Promise<{ id: str
           )}
 
           <History motion={motion} snapshot={snapshot} roster={roster} />
+
+          {isChair && canArchive(motion.status) && (
+            <ArchiveButton motionId={motion.id} archived={!!motion.archived_at} />
+          )}
         </div>
 
         {/* Side column: voting panel on desktop; on phones only the action bar shows, pinned to the bottom. */}
