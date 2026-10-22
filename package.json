@@ -8,7 +8,10 @@
     "start": "next start",
     "lint": "eslint",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "test": "node --test 'tests/unit/*.test.mts'",
+    "test:db": "./scripts/test-db.sh",
+    "icons": "node scripts/make-icons.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",

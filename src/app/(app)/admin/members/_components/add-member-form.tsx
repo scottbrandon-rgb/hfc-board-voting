@@ -1,78 +1,129 @@
 'use client';
 
-import { useActionState, useEffect, useRef } from 'react';
+import { useActionState, useState } from 'react';
+import { UserPlus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Sheet } from '@/components/board/sheet';
+import { SubmitButton } from '@/components/board/submit-button';
+import { ErrorText } from '@/components/board/ui';
 import { addMember, type MemberActionState } from '../actions';
 
-const initialState: MemberActionState = { status: 'idle' };
+const idle: MemberActionState = { status: 'idle' };
 
-export function AddMemberForm() {
-  const [state, formAction, pending] = useActionState(addMember, initialState);
-  const formRef = useRef<HTMLFormElement>(null);
+export function AddMemberButton() {
+  const [open, setOpen] = useState(false);
+  const [session, setSession] = useState(0);
+  return (
+    <>
+      <Button
+        size="lg"
+        onClick={() => {
+          setSession((n) => n + 1);
+          setOpen(true);
+        }}
+      >
+        <UserPlus className="size-5" aria-hidden="true" />
+        Add member
+      </Button>
+      <Sheet
+        open={open}
+        onOpenChange={setOpen}
+        title="Add a board member"
+        description="They sign in with a code sent to this email. No password needed."
+      >
+        <AddMemberForm key={session} onDone={() => setOpen(false)} />
+      </Sheet>
+    </>
+  );
+}
 
-  useEffect(() => {
-    if (state.status === 'success') formRef.current?.reset();
-  }, [state.status]);
+function AddMemberForm({ onDone }: { onDone: () => void }) {
+  const [state, action] = useActionState(addMember, idle);
+
+  if (state.status === 'success') {
+    return (
+      <div role="status" className="flex flex-col gap-4">
+        <p className="text-body">{state.message}</p>
+        <Button size="lg" onClick={onDone}>
+          Done
+        </Button>
+      </div>
+    );
+  }
 
   return (
-    <form ref={formRef} action={formAction} className="space-y-3">
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <div className="space-y-1">
-          <label htmlFor="full_name" className="text-xs font-medium text-neutral-700">
-            Full name
-          </label>
-          <input
-            id="full_name"
-            name="full_name"
-            type="text"
-            required
-            placeholder="Jane Smith"
-            className="w-full rounded-md border border-neutral-300 px-3 py-2 text-sm focus:border-neutral-500 focus:outline-none focus:ring-1 focus:ring-neutral-500"
-          />
-        </div>
-        <div className="space-y-1">
-          <label htmlFor="email" className="text-xs font-medium text-neutral-700">
-            Email
-          </label>
-          <input
-            id="email"
-            name="email"
-            type="email"
-            required
-            placeholder="jane@example.com"
-            className="w-full rounded-md border border-neutral-300 px-3 py-2 text-sm focus:border-neutral-500 focus:outline-none focus:ring-1 focus:ring-neutral-500"
-          />
-        </div>
-        <div className="space-y-1">
-          <label htmlFor="role" className="text-xs font-medium text-neutral-700">
-            Role
-          </label>
-          <select
-            id="role"
-            name="role"
-            defaultValue="member"
-            className="w-full rounded-md border border-neutral-300 px-3 py-2 text-sm focus:border-neutral-500 focus:outline-none focus:ring-1 focus:ring-neutral-500"
-          >
-            <option value="member">Member</option>
-            <option value="secretary">Secretary</option>
-            <option value="chair">Chair</option>
-          </select>
-        </div>
-      </div>
-
-      <div className="flex items-center gap-3">
-        <Button type="submit" size="sm" disabled={pending}>
-          {pending ? 'Adding…' : 'Add member'}
-        </Button>
-        {state.status === 'success' && (
-          <p className="text-sm text-emerald-700">Member added — they can now log in with their email.</p>
-        )}
-        {state.status === 'error' && (
-          <p className="text-destructive text-sm" role="alert">
-            {state.message}
-          </p>
-        )}
-      </div>
+    <form action={action} className="flex flex-col gap-3">
+      <label htmlFor="new-name" className="text-base font-semibold">
+        Full name
+      </label>
+      <Input
+        id="new-name"
+        name="full_name"
+        required
+        maxLength={80}
+        autoComplete="off"
+        placeholder="Jane Smith"
+      />
+      <label htmlFor="new-email" className="text-base font-semibold">
+        Email
+      </label>
+      <Input
+        id="new-email"
+        name="email"
+        type="email"
+        required
+        autoComplete="off"
+        autoCapitalize="none"
+        inputMode="email"
+        placeholder="jane@example.com"
+      />
+      <fieldset className="flex flex-col gap-2">
+        <legend className="mb-2 text-base font-semibold">Role</legend>
+        <RoleOption value="member" label="Member" detail="Votes online" defaultChecked />
+        <RoleOption
+          value="secretary"
+          label="Secretary"
+          detail="Votes online and keeps the meeting record"
+        />
+      </fieldset>
+      <p className="bg-page text-small text-ink-2 rounded-xl px-4 py-3">
+        To change who is chair, open the new chair&apos;s name on the Board page and choose Chair.
+      </p>
+      {state.status === 'error' && <ErrorText>{state.message}</ErrorText>}
+      <SubmitButton size="lg" pendingText="Adding…">
+        Add and send welcome email
+      </SubmitButton>
     </form>
+  );
+}
+
+export function RoleOption({
+  value,
+  label,
+  detail,
+  defaultChecked,
+  name = 'role',
+}: {
+  value: string;
+  label: string;
+  detail: string;
+  defaultChecked?: boolean;
+  name?: string;
+}) {
+  return (
+    <label className="border-line has-[:checked]:border-brand has-[:checked]:bg-brand-soft has-[:focus-visible]:ring-brand/40 flex min-h-16 cursor-pointer items-center gap-3 rounded-2xl border-2 bg-white px-4 py-3 has-[:focus-visible]:ring-3">
+      <input
+        type="radio"
+        name={name}
+        value={value}
+        defaultChecked={defaultChecked}
+        className="accent-brand size-5"
+      />
+      <span className="flex flex-col">
+        <span className="text-body font-semibold">{label}</span>
+        <span className="text-small text-ink-2">{detail}</span>
+      </span>
+    </label>
   );
 }
