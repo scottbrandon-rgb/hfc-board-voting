@@ -24,6 +24,31 @@
 -- Motions decided before this migration keep `rules = 'legacy'` and their
 -- original statuses. Motions still in progress move to the new rules.
 
+-- ─── Preflight ───────────────────────────────────────────────────────────────
+
+-- Seconded motions open for voting here, and votes under way freeze today's
+-- voting members as their electorate. With fewer than three voting members
+-- active (for example, while the real members are switched off for testing),
+-- those motions would be referred for want of a quorum, or decided by too few
+-- members. Stop before changing anything and say what to do.
+do $$
+declare
+  v_voters int;
+  v_pending int;
+begin
+  select count(*) into v_voters
+    from public.members
+   where is_active and role in ('member', 'secretary');
+  select count(*) into v_pending
+    from public.motions
+   where status in ('seconded', 'voting');
+  if v_pending > 0 and v_voters < 3 then
+    raise exception
+      'Migration 015 stopped: % motion(s) are seconded or voting, but only % voting member(s) are active. Activate the board''s voting members (and deactivate test accounts) first, then run this migration again. Nothing was changed.',
+      v_pending, v_voters;
+  end if;
+end $$;
+
 -- ─── Motions ──────────────────────────────────────────────────────────────────
 
 alter table public.motions drop constraint if exists motions_status_check;

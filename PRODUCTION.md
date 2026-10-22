@@ -15,25 +15,52 @@ a quiet time:
 
 1. **Confirm migrations 012–014 are applied** (Supabase → Database →
    Migrations, or run `select * from supabase_migrations.schema_migrations`).
-2. **Apply `supabase/migrations/015_unanimous_voting.sql`** in the Supabase
-   SQL editor (or `supabase db push`). It is one transaction: it either applies
-   completely or not at all.
+2. **Look at what's in progress and who can vote** (Supabase → SQL editor):
+
+   ```sql
+   select motion_number, title, status, created_at from public.motions
+    where status in ('open', 'moved', 'seconded', 'voting') order by created_at;
+
+   select full_name, email, role, is_active from public.members order by role, full_name;
+   ```
+
+   Decide what to do with any test motions first: before the migration they
+   can still be deleted; afterwards only drafts can be.
+
+3. **Set the board's real voting members before the migration.** The migration
+   freezes today's active voting members as the voters on any motion that is
+   seconded or voting. Migration 005 switched the five real members off for
+   testing, so turn them back on and switch the test account off:
+
+   ```sql
+   update public.members set is_active = true
+    where email in ('Buster.Burns@mail.signature.bank', 'samwilson@harrisonfaith.org',
+                    'malcolmrd@hotmail.com', 'jyoungblood@harrisonfaith.org',
+                    'trevorgibbins@harrisonfaith.org');
+   update public.members set is_active = false where email = 'bigbodyscotty@gmail.com';
+   ```
+
+   If motions are seconded or voting and fewer than three voting members are
+   active, the migration stops with a message and changes nothing.
+
+4. **Apply `supabase/migrations/015_unanimous_voting.sql`** in the Supabase
+   SQL editor (or `supabase db push`). It runs as one transaction: it either
+   applies completely or not at all.
    - Motions already decided keep their old results, labelled "(previous rules)".
    - Motions in progress switch to the new rules. A vote already open gets a
      deadline of five days after it opened, or one day from now if later.
      Earlier Nay/Abstain ballots count as "not Aye"; members can change them.
-3. **Merge to `main` right away.** Netlify builds and deploys in about three
+   - A seconded motion opens for voting with the five members as its voters.
+5. **Merge to `main` right away.** Netlify builds and deploys in about three
    minutes. Until it finishes, voting on the old site shows an error. Nothing
    is lost or recorded wrongly, because the database refuses it.
-4. Check `https://board.harrisonfaith.church/api/health` returns `{"ok":true}`.
+6. Check `https://board.harrisonfaith.church/api/health` returns `{"ok":true}`.
 
-### Then, on the Board page (signed in as chair)
+### Then, on the new site (signed in as chair)
 
-- **Retire the "Test" member** (bigbodyscotty@gmail.com) and **reactivate the
-  five real voting members**. The page should read "All five voting seats are
-  filled." (Migration 005 turned the real members off for testing.)
-- Set the secretary's role if it is not already set.
-- Set the next meeting date on the Meeting page.
+- **Board page:** it should read "All five voting seats are filled." Set the
+  secretary's role if it is not already set.
+- **Meeting page:** set the next meeting date.
 
 ---
 
@@ -131,10 +158,11 @@ both storage buckets (they must be private).
 
 ## Go-live checklist
 
+- [ ] Test motions dealt with; five real voting members active and the test account off (before the migration)
 - [ ] Migration 015 applied, then `main` deployed
 - [ ] `/api/health` returns ok (and `voting_rules_migration: ok` in the detailed view)
 - [ ] Public sign-ups off in Supabase
-- [ ] Test member retired; five voting members active; secretary set
+- [ ] Board page shows all five seats filled; secretary set
 - [ ] Resend domain verified
 - [ ] One motion taken through the whole process: draft → publish → move →
       second → five Ayes (approved) → ratified at the meeting; PDF downloads
