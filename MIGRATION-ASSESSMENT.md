@@ -18,15 +18,15 @@
 
 Live numbers from the production project today:
 
-| Measure | Value |
-|---|---|
-| Database size | 13 MB (mostly Postgres's own system tables) |
-| Members | 6 |
-| Motions | 5 (first one on 2026-05-01) |
-| Votes | 15 |
-| Audit-log rows | 62 |
-| Sign-in accounts | 9 |
-| Stored files | 10 files, ~1.4 MB (5 attachments, 5 PDFs) |
+| Measure          | Value                                       |
+| ---------------- | ------------------------------------------- |
+| Database size    | 13 MB (mostly Postgres's own system tables) |
+| Members          | 6                                           |
+| Motions          | 5 (first one on 2026-05-01)                 |
+| Votes            | 15                                          |
+| Audit-log rows   | 62                                          |
+| Sign-in accounts | 9                                           |
+| Stored files     | 10 files, ~1.4 MB (5 attachments, 5 PDFs)   |
 
 Expected growth: a board of six that handles maybe 2–6 motions a month. After ten years this database would still be under 50 MB. Traffic is a handful of people signing in a few times a week, plus one scheduled job every 15 minutes.
 
@@ -34,12 +34,12 @@ Expected growth: a board of six that handles maybe 2–6 motions a month. After 
 
 ### Your Supabase slots right now
 
-| Project | Status |
-|---|---|
-| `hfc-board-voting` | **Active** (this app) |
-| `hfc-budget-2027` | **Active** |
-| `kingdom-men` | Paused |
-| `harrison-faith-signups` | Paused |
+| Project                  | Status                |
+| ------------------------ | --------------------- |
+| `hfc-board-voting`       | **Active** (this app) |
+| `hfc-budget-2027`        | **Active**            |
+| `kingdom-men`            | Paused                |
+| `harrison-faith-signups` | Paused                |
 
 Both free active slots are taken. One of them is going to an app that barely uses it. Your reasoning holds.
 
@@ -47,13 +47,13 @@ Both free active slots are taken. One of them is going to an app that barely use
 
 ## 2. What the app actually uses from Supabase
 
-| Supabase feature | How the app uses it | Netlify replacement | Difficulty |
-|---|---|---|---|
-| **Postgres database** | 15 migrations; a 1,183-line voting engine (`015_unanimous_voting.sql`) with ~23 database functions and triggers that enforce the voting rules and keep the record append-only | **Netlify Database** (managed Postgres) | Low–Medium. Postgres to Postgres, so most of the SQL moves over. |
-| **Supabase-only SQL** | ~135 references to `auth.uid()`, the `auth` and `storage` schemas, RLS policies, and the `service_role` role | Rewrite: checks move into the app's data layer (`src/lib/dal.ts`) or onto a database setting the app sets per request | **Medium.** This is the careful part. |
-| **Auth (8-digit email code)** | `signInWithOtp` / `verifyOtp`, session cookies refreshed in `src/proxy.ts`, chair creates accounts via `auth.admin.createUser` | Custom sign-in: generate the code, email it through **Resend** (already in use), store a hashed code and a session in the database | **Medium–High.** Security-sensitive. |
-| **Storage (2 private buckets)** | Signed upload URLs for attachments, generated motion PDFs, signed download links | **Netlify Blobs**, served through an app route that checks sign-in | Low–Medium |
-| **Query client** | `supabase-js` query builder in ~16 files (~75 calls) and 13 `.rpc()` calls | `@netlify/database` with plain SQL, or Drizzle | Medium. Mechanical but wide. |
+| Supabase feature                | How the app uses it                                                                                                                                                           | Netlify replacement                                                                                                                | Difficulty                                                       |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| **Postgres database**           | 15 migrations; a 1,183-line voting engine (`015_unanimous_voting.sql`) with ~23 database functions and triggers that enforce the voting rules and keep the record append-only | **Netlify Database** (managed Postgres)                                                                                            | Low–Medium. Postgres to Postgres, so most of the SQL moves over. |
+| **Supabase-only SQL**           | ~135 references to `auth.uid()`, the `auth` and `storage` schemas, RLS policies, and the `service_role` role                                                                  | Rewrite: checks move into the app's data layer (`src/lib/dal.ts`) or onto a database setting the app sets per request              | **Medium.** This is the careful part.                            |
+| **Auth (8-digit email code)**   | `signInWithOtp` / `verifyOtp`, session cookies refreshed in `src/proxy.ts`, chair creates accounts via `auth.admin.createUser`                                                | Custom sign-in: generate the code, email it through **Resend** (already in use), store a hashed code and a session in the database | **Medium–High.** Security-sensitive.                             |
+| **Storage (2 private buckets)** | Signed upload URLs for attachments, generated motion PDFs, signed download links                                                                                              | **Netlify Blobs**, served through an app route that checks sign-in                                                                 | Low–Medium                                                       |
+| **Query client**                | `supabase-js` query builder in ~16 files (~75 calls) and 13 `.rpc()` calls                                                                                                    | `@netlify/database` with plain SQL, or Drizzle                                                                                     | Medium. Mechanical but wide.                                     |
 
 ### Why not Netlify Identity for sign-in?
 
@@ -64,19 +64,23 @@ Netlify reversed its deprecation of Identity in February 2026, so it is supporte
 ## 3. What it would take (with Claude Code doing the work)
 
 **Step 1: Set up the database (1 session)**
+
 - Create Netlify Database on the site and port the migrations into `netlify/database/migrations/`.
 - Strip the Supabase-only parts: the `auth`/`storage` schemas, `service_role` grants, and RLS policies tied to `auth.uid()`.
 - Run the existing `npm run test:db` voting-engine tests against plain Postgres. They already run on a scratch local Postgres with stubs (`supabase/tests/supabase_stubs.sql`), so most of the testing is already in place. That is a real head start.
 
 **Step 2: Replace sign-in (1–2 sessions)**
+
 - Add `login_codes` and `sessions` tables, then code generation, Resend email, verification with rate limits and expiry, and HTTP-only session cookies.
 - Rewrite `src/proxy.ts`, `src/lib/dal.ts` and the login and sign-out routes.
 
 **Step 3: Replace queries and storage (1–2 sessions)**
+
 - Convert the ~75 query calls and 13 function calls to SQL.
 - Move attachments and PDFs to Netlify Blobs, with a download route that checks sign-in.
 
 **Step 4: Move the data and cut over (1 session plus your time)**
+
 - Copy 6 members, 5 motions, votes, the audit log and 10 files. With this little data, it is a script, not a project.
 - Update the health check and `PRODUCTION.md`, deploy, and test the full go-live checklist.
 - Members sign in once more (their old sessions end).
