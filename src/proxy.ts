@@ -1,40 +1,17 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { createServerClient } from '@supabase/ssr';
 import { safeNext } from '@/lib/safe-next';
+import { SESSION_COOKIE, sessionCookieOptions } from '@/lib/session-cookie';
 
-// Next.js 16 renamed Middleware to Proxy. This file refreshes the Supabase
-// auth session on every request and gates the board pages behind sign-in.
+// Next.js 16 renamed Middleware to Proxy. This runs before every page: it
+// sends visitors without a sign-in cookie to the sign-in page, and keeps a
+// signed-in device's cookie fresh. Whether the cookie is still valid is
+// checked against the database by src/lib/dal.ts on each page.
 export async function proxy(request: NextRequest) {
-  let response = NextResponse.next({ request });
-
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll();
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
-          response = NextResponse.next({ request });
-          cookiesToSet.forEach(({ name, value, options }) =>
-            response.cookies.set(name, value, options),
-          );
-        },
-      },
-    },
-  );
-
-  // Required: refresh the access token if expired.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
   const path = request.nextUrl.pathname;
-  const isAuthPath = path === '/login' || path.startsWith('/auth/');
+  const token = request.cookies.get(SESSION_COOKIE)?.value;
+  const isPublicPath = path === '/login' || path.startsWith('/auth/') || path.startsWith('/setup/');
 
-  if (!user && !isAuthPath) {
+  if (!token && !isPublicPath) {
     const url = request.nextUrl.clone();
     url.pathname = '/login';
     url.search = '';
@@ -46,11 +23,11 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  if (user && path === '/login') {
-    const url = new URL(safeNext(request.nextUrl.searchParams.get('next')), request.url);
-    return NextResponse.redirect(url);
+  const response = NextResponse.next({ request });
+  // A device stays signed in for 90 days after it was last used.
+  if (token && !path.startsWith('/auth/')) {
+    response.cookies.set(SESSION_COOKIE, token, sessionCookieOptions);
   }
-
   return response;
 }
 

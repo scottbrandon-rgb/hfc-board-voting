@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { requireMember, friendlyError } from '@/lib/dal';
-import { createAdminClient } from '@/lib/supabase/admin';
+import { query, safely } from '@/lib/db';
 
 export type ProfileState =
   | { status: 'idle' }
@@ -18,14 +18,15 @@ export async function updateDisplayName(
   if (!name) return { status: 'error', message: 'Enter your name.' };
   if (name.length > 80) return { status: 'error', message: 'Keep your name under 80 characters.' };
 
-  const admin = createAdminClient();
-  const { error } = await admin.from('members').update({ full_name: name }).eq('id', member.id);
+  const { error } = await safely(() =>
+    query('update public.members set full_name = $2 where id = $1', [member.id, name]),
+  );
   if (error) return { status: 'error', message: friendlyError(error) };
-  await admin.from('audit_log').insert({
-    member_id: member.id,
-    event_type: 'member_name_changed',
-    event_data: { from: member.full_name, to: name },
-  });
+  await query(
+    `insert into public.audit_log (member_id, event_type, event_data)
+     values ($1, 'member_name_changed', $2)`,
+    [member.id, { from: member.full_name, to: name }],
+  );
 
   revalidatePath('/', 'layout');
   return { status: 'success' };
@@ -41,11 +42,10 @@ export async function setNotificationPreference(
 ): Promise<ProfileState> {
   const member = await requireMember();
   if (!PREFS.includes(pref)) return { status: 'error', message: 'Unknown setting.' };
-  const admin = createAdminClient();
-  const { error } = await admin
-    .from('members')
-    .update({ [pref]: enabled } as Partial<Record<Pref, boolean>>)
-    .eq('id', member.id);
+  // `pref` is one of the three column names above, never free text.
+  const { error } = await safely(() =>
+    query(`update public.members set ${pref} = $2 where id = $1`, [member.id, enabled]),
+  );
   if (error) return { status: 'error', message: friendlyError(error) };
   revalidatePath('/profile');
   return { status: 'success' };

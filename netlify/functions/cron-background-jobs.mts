@@ -1,5 +1,10 @@
 /**
- * Netlify scheduled function — runs every 15 minutes.
+ * Netlify scheduled function — runs once an hour.
+ *
+ * Hourly rather than every 15 minutes: each run wakes the database, and on
+ * Netlify's free plan the database's compute time is limited. Reminders
+ * (about 24 and 4 hours before a deadline) don't need more precision, and
+ * no one can vote after a deadline even before this job closes the vote.
  * Calls the Next.js background-jobs route, authenticated by CRON_SECRET.
  *
  * Netlify's current runtime requires a Response (an old-style
@@ -44,5 +49,5 @@ export default async function handler(): Promise<Response> {
 }
 
 export const config: Config = {
-  schedule: '*/15 * * * *',
+  schedule: '@hourly',
 };

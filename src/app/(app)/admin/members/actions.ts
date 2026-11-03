@@ -3,9 +3,8 @@
 import { after } from 'next/server';
 import { revalidatePath } from 'next/cache';
 import { requireChair, friendlyError } from '@/lib/dal';
-import { createAdminClient } from '@/lib/supabase/admin';
-import { escapeLike } from '@/lib/utils';
-import { ensureAuthUser } from '@/lib/auth-users';
+import { one, query, rpc, safely } from '@/lib/db';
+import { endAllSessions } from '@/lib/auth';
 import { notifyWelcome } from '@/lib/notify';
 
 export type MemberActionState =
@@ -22,12 +21,18 @@ async function audit(
   event: string,
   data: Record<string, unknown>,
 ) {
-  const admin = createAdminClient();
-  await admin.from('audit_log').insert({
-    member_id: actorId,
-    event_type: event,
-    event_data: { target_member_id: memberId, ...data },
-  });
+  await query(
+    `insert into public.audit_log (member_id, event_type, event_data) values ($1, $2, $3)`,
+    [actorId, event, { target_member_id: memberId, ...data }],
+  );
+}
+
+async function loadMember(memberId: string) {
+  if (!/^[0-9a-f-]{36}$/i.test(memberId)) return null;
+  return one<{ id: string; email: string; full_name: string; role: string; is_active: boolean }>(
+    'select id, email, full_name, role, is_active from public.members where id = $1',
+    [memberId],
+  );
 }
 
 function refresh() {
@@ -55,23 +60,21 @@ export async function addMember(
     return { status: 'error', message: 'New members join as a member or secretary.' };
   }
 
-  const admin = createAdminClient();
-  const { data: existing } = await admin
-    .from('members')
-    .select('id')
-    .ilike('email', escapeLike(email))
-    .maybeSingle();
+  const existing = await one('select id from public.members where lower(email) = lower($1)', [
+    email,
+  ]);
   if (existing)
     return { status: 'error', message: 'Someone with that email is already on the board list.' };
 
-  const { data: created, error } = await admin
-    .from('members')
-    .insert({ full_name: fullName, email, role, is_active: true })
-    .select('id')
-    .single();
+  const { data: created, error } = await safely(() =>
+    one<{ id: string }>(
+      `insert into public.members (full_name, email, role, is_active)
+       values ($1, $2, $3, true) returning id`,
+      [fullName, email, role],
+    ),
+  );
   if (error || !created) return { status: 'error', message: friendlyError(error) };
 
-  await ensureAuthUser(email);
   await audit(created.id, chair.id, 'member_added', { email, role });
   after(() => notifyWelcome(email, fullName));
   refresh();
@@ -91,18 +94,13 @@ export async function updateMemberRole(
     return { status: 'error', message: 'To step down as chair, make another member the chair.' };
   }
 
-  const admin = createAdminClient();
-  const { data: target } = await admin
-    .from('members')
-    .select('id, full_name, role, is_active')
-    .eq('id', memberId)
-    .maybeSingle();
+  const target = await loadMember(memberId);
   if (!target) return { status: 'error', message: 'Member not found.' };
   if (target.role === role) return { status: 'success', message: 'No change.' };
 
   if (role === 'chair') {
     if (!target.is_active) return { status: 'error', message: 'Reactivate this member first.' };
-    const { error } = await admin.rpc('admin_transfer_chair', {
+    const { error } = await rpc('admin_transfer_chair', {
       p_from_member_id: chair.id,
       p_to_member_id: memberId,
     });
@@ -115,7 +113,9 @@ export async function updateMemberRole(
     };
   }
 
-  const { error } = await admin.from('members').update({ role }).eq('id', memberId);
+  const { error } = await safely(() =>
+    query('update public.members set role = $2 where id = $1', [memberId, role]),
+  );
   if (error) return { status: 'error', message: friendlyError(error) };
   await audit(memberId, chair.id, 'member_role_changed', { from: target.role, to: role });
   refresh();
@@ -133,27 +133,21 @@ export async function updateMemberEmail(
     .toLowerCase();
   if (!EMAIL.test(email)) return { status: 'error', message: 'Enter a valid email address.' };
 
-  const admin = createAdminClient();
-  const { data: target } = await admin
-    .from('members')
-    .select('id, email')
-    .eq('id', memberId)
-    .maybeSingle();
+  const target = await loadMember(memberId);
   if (!target) return { status: 'error', message: 'Member not found.' };
   if (target.email.toLowerCase() === email) return { status: 'success', message: 'No change.' };
 
-  const { data: clash } = await admin
-    .from('members')
-    .select('id')
-    .ilike('email', escapeLike(email))
-    .neq('id', memberId)
-    .maybeSingle();
+  const clash = await one(
+    'select id from public.members where lower(email) = lower($1) and id <> $2',
+    [email, memberId],
+  );
   if (clash) return { status: 'error', message: 'Another member already uses that email.' };
 
-  const { error } = await admin.from('members').update({ email }).eq('id', memberId);
+  const { error } = await safely(() =>
+    query('update public.members set email = $2 where id = $1', [memberId, email]),
+  );
   if (error) return { status: 'error', message: friendlyError(error) };
 
-  await ensureAuthUser(email);
   await audit(memberId, chair.id, 'member_email_changed', { from: target.email, to: email });
   refresh();
   return {
@@ -170,19 +164,17 @@ export async function setMemberActive(
   const chair = await requireChair();
   if (memberId === chair.id) return { status: 'error', message: 'You cannot retire yourself.' };
 
-  const admin = createAdminClient();
-  const { data: target } = await admin
-    .from('members')
-    .select('id, full_name, role, is_active')
-    .eq('id', memberId)
-    .maybeSingle();
+  const target = await loadMember(memberId);
   if (!target) return { status: 'error', message: 'Member not found.' };
   if (target.role === 'chair')
     return { status: 'error', message: 'Make someone else the chair first.' };
   if (target.is_active === active) return { status: 'success', message: 'No change.' };
 
-  const { error } = await admin.from('members').update({ is_active: active }).eq('id', memberId);
+  const { error } = await safely(() =>
+    query('update public.members set is_active = $2 where id = $1', [memberId, active]),
+  );
   if (error) return { status: 'error', message: friendlyError(error) };
+  if (!active) await endAllSessions(memberId);
   await audit(memberId, chair.id, active ? 'member_reactivated' : 'member_retired', {});
   refresh();
   return {

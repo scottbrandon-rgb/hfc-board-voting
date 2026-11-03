@@ -1,5 +1,5 @@
 /**
- * Background jobs, called every 15 minutes by the Netlify scheduled function.
+ * Background jobs, called every hour by the Netlify scheduled function.
  * Requires `Authorization: Bearer <CRON_SECRET>`.
  *
  *  1. Close votes whose deadline has passed (approved if every member voted
@@ -13,7 +13,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createAdminClient } from '@/lib/supabase/admin';
+import { query } from '@/lib/db';
 import { notifyOutcome, notifyReminder } from '@/lib/notify';
 import { generateAndStorePdf } from '@/lib/generate-pdf';
 
@@ -30,38 +30,34 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
   }
 
-  const admin = createAdminClient();
-
-  const { data: closed, error: closeError } = await admin.rpc('vote_close_expired');
-  if (closeError) {
-    console.error('[cron] vote_close_expired failed:', closeError);
-    return NextResponse.json({ ok: false, error: closeError.message }, { status: 500 });
+  let closed: { r_motion_id: string; r_outcome: string; r_reason: string | null }[];
+  let reminders: { r_motion_id: string; r_kind: string }[];
+  try {
+    closed = await query('select * from public.vote_close_expired()');
+    reminders = await query('select * from public.vote_claim_reminders()');
+  } catch (err) {
+    console.error('[cron] voting jobs failed:', err);
+    return NextResponse.json({ ok: false, error: (err as Error).message }, { status: 500 });
   }
 
-  const { data: reminders, error: reminderError } = await admin.rpc('vote_claim_reminders');
-  if (reminderError) {
-    console.error('[cron] vote_claim_reminders failed:', reminderError);
-    return NextResponse.json({ ok: false, error: reminderError.message }, { status: 500 });
-  }
-
-  for (const row of closed ?? []) {
+  for (const row of closed) {
     await notifyOutcome(row.r_motion_id);
     await generateAndStorePdf(row.r_motion_id).catch((err) =>
       console.error('[cron] PDF generation failed:', err),
     );
   }
-  for (const row of reminders ?? []) {
+  for (const row of reminders) {
     await notifyReminder(row.r_motion_id, row.r_kind === 'final' ? 'final' : '24h');
   }
 
   const summary = {
     ok: true,
-    closed: (closed ?? []).map((r) => ({
+    closed: closed.map((r) => ({
       id: r.r_motion_id,
       outcome: r.r_outcome,
       reason: r.r_reason,
     })),
-    reminders: (reminders ?? []).length,
+    reminders: reminders.length,
   };
   console.log('[cron] background jobs:', JSON.stringify(summary));
   return NextResponse.json(summary);

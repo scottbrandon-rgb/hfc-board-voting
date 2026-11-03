@@ -45,6 +45,46 @@ export async function sendEach(recipients: readonly string[], message: Message):
   }
 }
 
+/**
+ * Sends a sign-in code. Unlike the notices above, the member is waiting for
+ * it, so this reports whether it was accepted for delivery.
+ */
+export async function sendSignInCode(email: string, code: string): Promise<boolean> {
+  if (!resend) {
+    if (process.env.NODE_ENV === 'production') {
+      console.error('[email] RESEND_API_KEY not set — cannot send sign-in codes');
+      return false;
+    }
+    // Local development only: there is no mail service, so show the code here.
+    console.log(`[email] sign-in code for ${email}: ${code}`);
+    return true;
+  }
+  const { html, text } = render({
+    title: 'Your sign-in code',
+    paragraphs: [
+      `Enter this code on the Deacon Board site to sign in: ${code}`,
+      'It works once, for one hour. If you did not ask to sign in, you can ignore this email.',
+    ],
+  });
+  try {
+    const { error } = await resend.emails.send({
+      from: FROM,
+      to: [email],
+      subject: `Deacon Board sign-in code: ${code}`,
+      html,
+      text,
+    });
+    if (error) {
+      console.error('[email] sign-in code failed:', error);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error('[email] sign-in code failed:', err);
+    return false;
+  }
+}
+
 // ─── Templates ────────────────────────────────────────────────────────────────
 
 export function escapeHtml(value: string): string {

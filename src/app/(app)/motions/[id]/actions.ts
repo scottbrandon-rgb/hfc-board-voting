@@ -4,7 +4,9 @@ import { after } from 'next/server';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { requireMember, requireChair, requestContext, friendlyError } from '@/lib/dal';
-import { createAdminClient } from '@/lib/supabase/admin';
+import { one, query, rpc, safely } from '@/lib/db';
+import { deleteFile } from '@/lib/files';
+import { canSeeMotion } from '@/lib/queries';
 import { canArchive, commentsOpen, type BallotChoice, type BallotReason } from '@/lib/rules';
 import {
   notifyCall,
@@ -32,6 +34,21 @@ export type BallotState =
       electorate: number;
     };
 
+/** Adds an entry to the audit log (append-only). */
+async function audit(
+  motionId: string,
+  memberId: string,
+  event: string,
+  data: Record<string, unknown>,
+  ctx?: { p_ip: string | null; p_user_agent: string | null },
+) {
+  await query(
+    `insert into public.audit_log (motion_id, member_id, event_type, event_data, ip_address, user_agent)
+     values ($1, $2, $3, $4, $5, $6)`,
+    [motionId, memberId, event, data, ctx?.p_ip ?? null, ctx?.p_user_agent ?? null],
+  );
+}
+
 function refresh(motionId: string) {
   revalidatePath(`/motions/${motionId}`);
   revalidatePath('/');
@@ -49,8 +66,7 @@ function pdfAfter(motionId: string) {
 
 export async function publishDraft(motionId: string): Promise<ActionState> {
   const chair = await requireChair();
-  const admin = createAdminClient();
-  const { error } = await admin.rpc('vote_publish_motion', {
+  const { error } = await rpc('vote_publish_motion', {
     p_motion_id: motionId,
     p_member_id: chair.id,
     ...(await requestContext()),
@@ -63,13 +79,10 @@ export async function publishDraft(motionId: string): Promise<ActionState> {
 
 export async function deleteDraft(motionId: string): Promise<ActionState> {
   const chair = await requireChair();
-  const admin = createAdminClient();
-
-  const { data: motion } = await admin
-    .from('motions')
-    .select('id, status, motion_number')
-    .eq('id', motionId)
-    .maybeSingle();
+  const motion = await one<{ id: string; status: string; motion_number: string }>(
+    'select id, status, motion_number from public.motions where id = $1',
+    [motionId],
+  );
   if (!motion) return { status: 'error', message: 'Motion not found.' };
   if (motion.status !== 'draft') {
     return {
@@ -78,23 +91,22 @@ export async function deleteDraft(motionId: string): Promise<ActionState> {
     };
   }
 
-  const { data: attachments } = await admin
-    .from('motion_attachments')
-    .select('storage_path')
-    .eq('motion_id', motionId);
+  const attachments = await query<{ storage_path: string }>(
+    'select storage_path from public.motion_attachments where motion_id = $1',
+    [motionId],
+  );
 
-  const { error } = await admin.from('motions').delete().eq('id', motionId).eq('status', 'draft');
+  const { error } = await safely(() =>
+    query(`delete from public.motions where id = $1 and status = 'draft'`, [motionId]),
+  );
   if (error) return { status: 'error', message: friendlyError(error) };
 
-  if (attachments?.length) {
-    await admin.storage.from('motion-attachments').remove(attachments.map((a) => a.storage_path));
+  for (const a of attachments) {
+    await deleteFile('motion-attachments', a.storage_path).catch((err) =>
+      console.error('[files] could not delete', a.storage_path, err),
+    );
   }
-  await admin.from('audit_log').insert({
-    motion_id: motionId,
-    member_id: chair.id,
-    event_type: 'draft_deleted',
-    event_data: { motion_number: motion.motion_number },
-  });
+  await audit(motionId, chair.id, 'draft_deleted', { motion_number: motion.motion_number });
 
   revalidatePath('/');
   redirect('/');
@@ -104,8 +116,7 @@ export async function deleteDraft(motionId: string): Promise<ActionState> {
 
 export async function moveMotion(motionId: string): Promise<ActionState> {
   const member = await requireMember();
-  const admin = createAdminClient();
-  const { error } = await admin.rpc('vote_move_motion', {
+  const { error } = await rpc('vote_move_motion', {
     p_motion_id: motionId,
     p_member_id: member.id,
     ...(await requestContext()),
@@ -117,8 +128,7 @@ export async function moveMotion(motionId: string): Promise<ActionState> {
 
 export async function secondMotion(motionId: string): Promise<ActionState> {
   const member = await requireMember();
-  const admin = createAdminClient();
-  const { data: status, error } = await admin.rpc('vote_second_motion', {
+  const { data: status, error } = await rpc<string>('vote_second_motion', {
     p_motion_id: motionId,
     p_member_id: member.id,
     ...(await requestContext()),
@@ -137,8 +147,7 @@ export async function secondMotion(motionId: string): Promise<ActionState> {
 
 export async function withdrawMotion(motionId: string): Promise<ActionState> {
   const member = await requireMember();
-  const admin = createAdminClient();
-  const { error } = await admin.rpc('vote_withdraw_motion', {
+  const { error } = await rpc('vote_withdraw_motion', {
     p_motion_id: motionId,
     p_member_id: member.id,
     ...(await requestContext()),
@@ -174,8 +183,7 @@ export async function castBallot(
   const note =
     choice === 'discuss' && typeof rawNote === 'string' ? rawNote.trim().slice(0, 1000) : '';
 
-  const admin = createAdminClient();
-  const { data, error } = await admin.rpc('vote_cast_ballot', {
+  const { data, error } = await rpc<Record<string, unknown>>('vote_cast_ballot', {
     p_motion_id: motionId,
     p_member_id: member.id,
     p_choice: choice,
@@ -212,8 +220,7 @@ export async function referMotion(
   if (note.length < 3)
     return { status: 'error', message: 'Add a note to the board explaining the referral.' };
 
-  const admin = createAdminClient();
-  const { error } = await admin.rpc('vote_refer_motion', {
+  const { error } = await rpc('vote_refer_motion', {
     p_motion_id: motionId,
     p_member_id: chair.id,
     p_note: note,
@@ -241,8 +248,7 @@ export async function extendDeadline(
   if (note.length < 3)
     return { status: 'error', message: 'Add a note to the board explaining the extension.' };
 
-  const admin = createAdminClient();
-  const { error } = await admin.rpc('vote_extend_deadline', {
+  const { error } = await rpc('vote_extend_deadline', {
     p_motion_id: motionId,
     p_member_id: chair.id,
     p_days: days,
@@ -262,8 +268,7 @@ export async function extendDeadline(
  */
 export async function sendCall(motionId: string): Promise<ActionState> {
   const chair = await requireChair();
-  const admin = createAdminClient();
-  const { data: status, error } = await admin.rpc('vote_mark_call', {
+  const { data: status, error } = await rpc<string>('vote_mark_call', {
     p_motion_id: motionId,
     p_member_id: chair.id,
     ...(await requestContext()),
@@ -289,37 +294,35 @@ export async function sendCall(motionId: string): Promise<ActionState> {
  */
 export async function setArchived(motionId: string, archived: boolean): Promise<ActionState> {
   const chair = await requireChair();
-  const admin = createAdminClient();
-  const { data: motion } = await admin
-    .from('motions')
-    .select('status, motion_number, archived_at')
-    .eq('id', motionId)
-    .maybeSingle();
+  const motion = await one<{ status: string; motion_number: string; archived_at: string | null }>(
+    'select status, motion_number, archived_at from public.motions where id = $1',
+    [motionId],
+  );
   if (!motion) return { status: 'error', message: 'Motion not found.' };
   if (archived && !canArchive(motion.status)) {
     return { status: 'error', message: 'Only finished motions can be archived.' };
   }
   if (!!motion.archived_at === archived) return { status: 'success' };
 
-  const { error } = await admin
-    .from('motions')
-    .update(
-      archived
-        ? { archived_at: new Date().toISOString(), archived_by: chair.id }
-        : { archived_at: null, archived_by: null },
-    )
-    .eq('id', motionId);
+  const { error } = await safely(() =>
+    archived
+      ? query('update public.motions set archived_at = now(), archived_by = $2 where id = $1', [
+          motionId,
+          chair.id,
+        ])
+      : query('update public.motions set archived_at = null, archived_by = null where id = $1', [
+          motionId,
+        ]),
+  );
   if (error) return { status: 'error', message: friendlyError(error) };
 
-  const ctx = await requestContext();
-  await admin.from('audit_log').insert({
-    motion_id: motionId,
-    member_id: chair.id,
-    event_type: archived ? 'archived' : 'unarchived',
-    event_data: { motion_number: motion.motion_number, status: motion.status },
-    ip_address: ctx.p_ip,
-    user_agent: ctx.p_user_agent,
-  });
+  await audit(
+    motionId,
+    chair.id,
+    archived ? 'archived' : 'unarchived',
+    { motion_number: motion.motion_number, status: motion.status },
+    await requestContext(),
+  );
 
   refresh(motionId);
   return { status: 'success' };
@@ -338,20 +341,23 @@ export async function postComment(
   if (body.length > 4000)
     return { status: 'error', message: 'Keep comments under 4,000 characters.' };
 
-  const admin = createAdminClient();
-  const { data: motion } = await admin
-    .from('motions')
-    .select('status')
-    .eq('id', motionId)
-    .maybeSingle();
-  if (!motion) return { status: 'error', message: 'Motion not found.' };
+  const motion = await one<{ status: string; created_by: string }>(
+    'select status, created_by from public.motions where id = $1',
+    [motionId],
+  );
+  if (!motion || !canSeeMotion(motion, member))
+    return { status: 'error', message: 'Motion not found.' };
   if (!commentsOpen(motion.status)) {
     return { status: 'error', message: 'Discussion is closed for this motion.' };
   }
 
-  const { error } = await admin
-    .from('comments')
-    .insert({ motion_id: motionId, member_id: member.id, body });
+  const { error } = await safely(() =>
+    query('insert into public.comments (motion_id, member_id, body) values ($1, $2, $3)', [
+      motionId,
+      member.id,
+      body,
+    ]),
+  );
   if (error) return { status: 'error', message: friendlyError(error) };
 
   after(() => notifyComment(motionId, member.id, body));

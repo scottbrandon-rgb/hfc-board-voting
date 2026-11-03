@@ -1,5 +1,6 @@
 import 'server-only';
-import { createAdminClient } from '@/lib/supabase/admin';
+import { one, query } from '@/lib/db';
+import type { MotionRow } from '@/lib/db-types';
 import { APP_URL, motionUrl, render, sendEach } from '@/lib/email';
 import { formatDateTime } from '@/lib/format';
 import { referralReasonLabel } from '@/lib/rules';
@@ -18,49 +19,65 @@ interface Recipient {
 }
 
 async function activeMembers(): Promise<(Recipient & Record<Pref, boolean>)[]> {
-  const admin = createAdminClient();
-  const { data, error } = await admin
-    .from('members')
-    .select('id, email, full_name, role, notify_new_motions, notify_comments, notify_results')
-    .eq('is_active', true);
-  if (error) {
-    console.error('[notify] could not load members:', error.message);
+  try {
+    return await query<Recipient & Record<Pref, boolean>>(
+      `select id, email, full_name, role, notify_new_motions, notify_comments, notify_results
+         from public.members where is_active`,
+    );
+  } catch (err) {
+    console.error('[notify] could not load members:', (err as Error).message);
     return [];
   }
-  return data ?? [];
 }
 
 async function loadMotion(motionId: string) {
-  const admin = createAdminClient();
-  const { data } = await admin
-    .from('motions')
-    .select(
-      'id, motion_number, title, status, moved_by, voting_deadline, electorate_size, referral_reason, referral_note, referred_by, deadline_extension_note',
-    )
-    .eq('id', motionId)
-    .maybeSingle();
-  return data;
+  return one<
+    Pick<
+      MotionRow,
+      | 'id'
+      | 'motion_number'
+      | 'title'
+      | 'status'
+      | 'moved_by'
+      | 'voting_deadline'
+      | 'electorate_size'
+      | 'referral_reason'
+      | 'referral_note'
+      | 'referred_by'
+      | 'deadline_extension_note'
+    >
+  >(
+    `select id, motion_number, title, status, moved_by, voting_deadline, electorate_size,
+            referral_reason, referral_note, referred_by, deadline_extension_note
+       from public.motions where id = $1`,
+    [motionId],
+  );
+}
+
+async function electorateIds(motionId: string): Promise<string[]> {
+  const rows = await query<{ member_id: string }>(
+    'select member_id from public.motion_electorate where motion_id = $1',
+    [motionId],
+  );
+  return rows.map((r) => r.member_id);
 }
 
 async function electorateNonVoters(motionId: string): Promise<string[]> {
-  const admin = createAdminClient();
-  const [{ data: electorate }, { data: votes }, members] = await Promise.all([
-    admin.from('motion_electorate').select('member_id').eq('motion_id', motionId),
-    admin.from('votes').select('member_id').eq('motion_id', motionId),
+  const [electorate, votes, members] = await Promise.all([
+    electorateIds(motionId),
+    query<{ member_id: string }>('select member_id from public.votes where motion_id = $1', [
+      motionId,
+    ]),
     activeMembers(),
   ]);
-  const voted = new Set((votes ?? []).map((v) => v.member_id));
-  const ids = new Set((electorate ?? []).map((e) => e.member_id).filter((id) => !voted.has(id)));
+  const voted = new Set(votes.map((v) => v.member_id));
+  const ids = new Set(electorate.filter((id) => !voted.has(id)));
   return members.filter((m) => ids.has(m.id)).map((m) => m.email);
 }
 
 async function electorateEmails(motionId: string): Promise<string[]> {
-  const admin = createAdminClient();
-  const [{ data: electorate }, members] = await Promise.all([
-    admin.from('motion_electorate').select('member_id').eq('motion_id', motionId),
-    activeMembers(),
-  ]);
-  const ids = new Set((electorate ?? []).map((e) => e.member_id));
+  const [electorate, members] = await Promise.all([electorateIds(motionId), activeMembers()]);
+  const ids = new Set(electorate);
   return members.filter((m) => ids.has(m.id)).map((m) => m.email);
 }
 
@@ -222,12 +239,11 @@ export async function notifyOutcome(motionId: string): Promise<void> {
 
 export async function notifyRatified(motionIds: readonly string[]): Promise<void> {
   if (motionIds.length === 0) return;
-  const admin = createAdminClient();
-  const { data: motions } = await admin
-    .from('motions')
-    .select('id, motion_number, title')
-    .in('id', [...motionIds]);
-  if (!motions?.length) return;
+  const motions = await query<{ id: string; motion_number: string; title: string }>(
+    'select id, motion_number, title from public.motions where id = any($1::uuid[])',
+    [[...motionIds]],
+  );
+  if (!motions.length) return;
   const members = await activeMembers();
   const to = members.filter((r) => r.notify_results).map((r) => r.email);
   const list = motions.map((m) => `${m.motion_number} — ${m.title}`);

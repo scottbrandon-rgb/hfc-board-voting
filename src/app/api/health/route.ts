@@ -1,25 +1,19 @@
 /**
  * GET /api/health
- * Health check: database, storage buckets, required settings and the voting
- * rules migration. Returns 200 if every check passes, 500 otherwise.
+ * Health check: the database (and that its migrations have run), file
+ * storage and required settings. Returns 200 if every check passes, 500
+ * otherwise.
  *
  * The details are shown only with `Authorization: Bearer <CRON_SECRET>`; the
  * public answer is just ok / not ok, so the page reveals nothing about the board.
  */
 import { NextResponse, type NextRequest } from 'next/server';
-import { createAdminClient } from '@/lib/supabase/admin';
+import { one } from '@/lib/db';
+import { fileExists } from '@/lib/files';
 
 export const dynamic = 'force-dynamic';
 
-const REQUIRED_ENV = [
-  'NEXT_PUBLIC_SUPABASE_URL',
-  'NEXT_PUBLIC_SUPABASE_ANON_KEY',
-  'SUPABASE_SERVICE_ROLE_KEY',
-  'RESEND_API_KEY',
-  'RESEND_FROM_EMAIL',
-  'APP_URL',
-  'CRON_SECRET',
-];
+const REQUIRED_ENV = ['RESEND_API_KEY', 'RESEND_FROM_EMAIL', 'APP_URL', 'CRON_SECRET'];
 
 function message(err: unknown): string {
   if (err && typeof err === 'object' && 'message' in err) return String(err.message);
@@ -27,7 +21,7 @@ function message(err: unknown): string {
 }
 
 export async function GET(request: NextRequest) {
-  const checks: Record<string, string> = {};
+  const checks: Record<string, string | number> = {};
   let ok = true;
   const fail = (key: string, detail: string) => {
     checks[key] = detail;
@@ -40,29 +34,28 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const admin = createAdminClient();
-
-    const { error: dbError } = await admin.from('members').select('id', { head: true }).limit(1);
-    if (dbError) fail('db', `error: ${dbError.message}`);
-    else checks.db = 'ok';
-
-    // Migration 015 adds the unanimous voting rules; the app needs it.
-    const { error: rulesError } = await admin
-      .from('board_settings')
-      .select('id', { head: true })
-      .limit(1);
-    if (rulesError)
-      fail('voting_rules_migration', 'missing: apply supabase/migrations/015_unanimous_voting.sql');
-    else checks.voting_rules_migration = 'ok';
-
-    for (const bucket of ['motion-attachments', 'motion-pdfs']) {
-      const { data, error } = await admin.storage.getBucket(bucket);
-      if (error) fail(`storage:${bucket}`, `error: ${error.message}`);
-      else if (data.public) fail(`storage:${bucket}`, 'WARN: bucket is public');
-      else checks[`storage:${bucket}`] = 'ok (private)';
-    }
+    const row = await one<{ voting: string | null; sign_in: string | null; members: number }>(
+      `select to_regclass('public.board_settings')::text as voting,
+              to_regclass('public.sessions')::text as sign_in,
+              (select count(*) from public.members where is_active) as members`,
+    );
+    checks.db = 'ok';
+    if (row?.voting) checks.voting_rules_migration = 'ok';
+    else fail('voting_rules_migration', 'missing: 0001_baseline.sql has not run');
+    if (row?.sign_in) checks.sign_in_migration = 'ok';
+    else fail('sign_in_migration', 'missing: 0002_sign_in.sql has not run');
+    // Zero until the records are copied over from Supabase (/setup/import).
+    checks.active_members = row?.members ?? 0;
+    if (!row?.members) fail('records', 'no members yet: open /setup/import');
   } catch (err) {
     fail('db', `error: ${message(err)}`);
+  }
+
+  try {
+    await fileExists('motion-pdfs', 'health-check.pdf');
+    checks.files = 'ok';
+  } catch (err) {
+    fail('files', `error: ${message(err)}`);
   }
 
   const secret = process.env.CRON_SECRET;

@@ -1,5 +1,6 @@
--- Tests for the electronic voting rules (migration 015).
--- Run with scripts/test-db.sh. Any failed ASSERT or unexpected error stops the run.
+-- Tests for the electronic voting rules (netlify/database/migrations).
+-- Run with scripts/test-db.sh, after fixtures.sql. Any failed ASSERT or
+-- unexpected error stops the run.
 
 \set ON_ERROR_STOP on
 
@@ -56,25 +57,39 @@ begin
 end;
 $$;
 
--- ─── 1. Migration: legacy motions ────────────────────────────────────────────
+-- ─── 1. Imported records ──────────────────────────────────────────────────
 do $$
 declare m public.motions;
 begin
   select * into m from public.motions where id = '00000000-0000-0000-0000-0000000000b1';
-  assert m.rules = 'legacy' and m.status = 'decided_passed', 'decided legacy motion untouched';
-  assert (select count(*) from public.votes where motion_id = m.id) = 2, 'legacy ballots kept';
+  assert m.rules = 'legacy' and m.status = 'decided_passed', 'decided legacy motion as imported';
+  assert (select count(*) from public.votes where motion_id = m.id) = 2, 'past ballots imported';
 
-  select * into m from public.motions where id = '00000000-0000-0000-0000-0000000000b2';
-  assert m.rules = 'unanimous_v1', 'in-progress vote moved to new rules';
-  assert m.electorate_size = 5, 'electorate frozen at 5';
-  assert m.voting_deadline >= now() + interval '23 hours', 'at least a day left';
+  -- Outside the import, a ballot on a decided motion is refused.
+  perform tests.expect_error(format(
+    'insert into public.votes (motion_id, member_id, vote, motion_hash_at_vote) values (%L, %L, %L, %L)',
+    m.id, tests.v(3), 'aye', 'x'), 'Voting is closed');
 
   select * into m from public.motions where id = '00000000-0000-0000-0000-0000000000b3';
-  assert m.status = 'voting', 'seconded legacy motion opened for voting';
+  assert m.status = 'voting', 'seconded motion opened for voting';
   assert m.motion_text_hash is not null and m.electorate_size = 5, 'opened with hash and electorate';
+end $$;
 
-  select * into m from public.motions where id = '00000000-0000-0000-0000-0000000000b4';
-  assert m.rules = 'unanimous_v1' and m.status = 'open', 'open legacy motion on new rules';
+-- The import's allowance lasts only for its own transaction.
+begin;
+select set_config('hfc.importing', 'on', true);
+insert into public.votes (motion_id, member_id, vote, motion_hash_at_vote)
+values ('00000000-0000-0000-0000-0000000000b1', '00000000-0000-0000-0000-0000000000a4', 'aye', 'legacyhash');
+commit;
+do $$
+begin
+  assert current_setting('hfc.importing', true) is distinct from 'on', 'allowance ended with the transaction';
+  perform tests.expect_error(
+    'update public.votes set vote = ''nay'' where member_id = ''00000000-0000-0000-0000-0000000000a4''',
+    'Voting is closed');
+  perform tests.expect_error(
+    'delete from public.votes where member_id = ''00000000-0000-0000-0000-0000000000a4''',
+    'cannot be deleted');
 end $$;
 
 -- ─── 2. Hash matches the JavaScript formula ─────────────────────────────────
@@ -322,7 +337,16 @@ begin
     '00000000-0000-0000-0000-0000000000b1', tests.v(3), 'aye', 'x'), 'Voting is closed');
   -- A member with history cannot be deleted (their audit entries and ballots
   -- are permanent); the app retires members instead.
-  perform tests.expect_error(format('delete from public.members where id = %L', tests.v(1)), 'append-only');
+  -- (Refused by whichever safeguard Postgres checks first: the frozen voting
+  -- lists or the append-only audit log.)
+  begin
+    delete from public.members where id = tests.v(1);
+    raise exception 'a member with history was deleted';
+  exception when others then
+    if sqlerrm not like '%append-only%' and sqlerrm not like '%motion_electorate_member_id_fkey%' then
+      raise;
+    end if;
+  end;
 
   -- A draft (with audit history) can still be deleted.
   perform private.audit(v_draft, tests.chair(), 'created', '{}'::jsonb);
@@ -352,7 +376,7 @@ declare
   v_id uuid;
 begin
   select * into m from public.motions where id = '00000000-0000-0000-0000-0000000000b5';
-  assert m.status = 'decided_failed', 'archived motion gets its outcome back from the audit log';
+  assert m.status = 'decided_failed', 'archived motion keeps its outcome';
   assert m.archived_at is not null and m.archived_by = tests.chair(), 'archive kept as a marker';
 
   v_id := tests.new_vote('HFC-T17');
@@ -362,25 +386,5 @@ begin
   update public.motions set archived_at = now() where id = m.id;
   assert (select status from public.motions where id = m.id) = 'decided_failed', 'outcome unchanged';
 end $$;
-
--- ─── 18. Direct access from a member's session (Data API) ───────────────────
-reset role;
-grant usage on schema tests to authenticated;
-set role authenticated;
-set request.jwt.claims = '{"email": "v1@example.org"}';
-do $$
-begin
-  assert (select count(*) from public.votes) > 0, 'members can read every ballot (votes are not secret)';
-  perform tests.expect_error(format(
-    'insert into public.votes (motion_id, member_id, vote, motion_hash_at_vote) values (%L, %L, %L, %L)',
-    '00000000-0000-0000-0000-0000000000b2', '00000000-0000-0000-0000-0000000000a1', 'aye', 'x'),
-    'permission denied');
-  perform tests.expect_error(format('select public.vote_cast_ballot(%L, %L, %L)',
-    '00000000-0000-0000-0000-0000000000b2', '00000000-0000-0000-0000-0000000000a1', 'aye'),
-    'permission denied');
-  perform tests.expect_error('select public.vote_close_expired()', 'permission denied');
-end $$;
-reset role;
-reset request.jwt.claims;
 
 select 'All voting engine tests passed' as result;

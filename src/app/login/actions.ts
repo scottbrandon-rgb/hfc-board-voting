@@ -1,12 +1,18 @@
 'use server';
 
-import { createAdminClient } from '@/lib/supabase/admin';
-import { escapeLike } from '@/lib/utils';
-import { ensureAuthUser } from '@/lib/auth-users';
+import { headers } from 'next/headers';
+import {
+  findActiveMember,
+  issueCode,
+  startSession,
+  verifyCode,
+  withdrawLatestCode,
+} from '@/lib/auth';
+import { sendSignInCode } from '@/lib/email';
 
 export type LoginState =
   | { status: 'idle' }
-  | { status: 'allowed'; email: string } // on the board list — the browser asks for the code
+  | { status: 'sent'; email: string } // code emailed — the browser asks for it
   | { status: 'error'; message: string };
 
 const NOT_ON_LIST =
@@ -16,12 +22,8 @@ function isValidEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
-/**
- * Checks the board list. The code itself is requested from the browser so the
- * browser holds the sign-in session; this step makes sure the member has a
- * sign-in account first, because the browser may not create one.
- */
-export async function checkAllowlist(_prev: LoginState, formData: FormData): Promise<LoginState> {
+/** Checks the board list and emails an 8-digit sign-in code. */
+export async function requestCode(_prev: LoginState, formData: FormData): Promise<LoginState> {
   const rawEmail = formData.get('email');
   if (typeof rawEmail !== 'string' || !rawEmail.trim()) {
     return { status: 'error', message: 'Enter your email address.' };
@@ -31,23 +33,60 @@ export async function checkAllowlist(_prev: LoginState, formData: FormData): Pro
     return { status: 'error', message: 'Enter a valid email address.' };
   }
 
-  const admin = createAdminClient();
-  const { data: member, error } = await admin
-    .from('members')
-    .select('id')
-    .ilike('email', escapeLike(email))
-    .eq('is_active', true)
-    .maybeSingle();
+  try {
+    const member = await findActiveMember(email);
+    if (!member) return { status: 'error', message: NOT_ON_LIST };
 
-  if (error) {
-    console.error('[login] board list lookup failed:', error);
+    const issued = await issueCode(member.id);
+    if (!issued.ok) {
+      return {
+        status: 'error',
+        message:
+          issued.reason === 'wait'
+            ? 'A code was sent a moment ago. Wait a minute, then try again.'
+            : 'Several codes were sent in the last hour. Use the newest one, or wait an hour and try again.',
+      };
+    }
+
+    if (!(await sendSignInCode(member.email, issued.code))) {
+      // Not sent, so it should not count against the member's hourly limit.
+      await withdrawLatestCode(member.id);
+      return {
+        status: 'error',
+        message: "We couldn't send a code just now. Please try again in a minute.",
+      };
+    }
+    return { status: 'sent', email };
+  } catch (err) {
+    console.error('[login] could not send a code:', err);
     return {
       status: 'error',
       message: "We couldn't check the board list just now. Please try again.",
     };
   }
-  if (!member) return { status: 'error', message: NOT_ON_LIST };
+}
 
-  await ensureAuthUser(email);
-  return { status: 'allowed', email };
+export type VerifyState = { ok: true } | { ok: false; message: string };
+
+/** Checks the code and, if it is right, signs this browser in. */
+export async function signInWithCode(email: string, code: string): Promise<VerifyState> {
+  try {
+    const result = await verifyCode(email, code);
+    if (!result.ok) {
+      return {
+        ok: false,
+        message:
+          result.reason === 'expired'
+            ? 'That code has expired, or a newer one was sent. Use the latest code, or send a new one.'
+            : result.reason === 'too_many'
+              ? 'Too many tries with that code. Send a new code.'
+              : "That code didn't work. Check the digits and try again.",
+      };
+    }
+    await startSession(result.memberId, (await headers()).get('user-agent'));
+    return { ok: true };
+  } catch (err) {
+    console.error('[login] sign-in failed:', err);
+    return { ok: false, message: 'Something went wrong. Please try again.' };
+  }
 }

@@ -1,4 +1,6 @@
+import { redirect } from 'next/navigation';
 import { Monogram } from '@/components/board/ui';
+import { getCurrentMember } from '@/lib/dal';
 import { safeNext } from '@/lib/safe-next';
 import { LoginForm } from './login-form';
 
@@ -21,6 +23,8 @@ export default async function LoginPage({
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
   const params = await searchParams;
+  // Already signed in: carry on to where they were going.
+  if (await getCurrentMember()) redirect(safeNext(one(params.next)));
   const noticeKey = one(params.notice) ?? one(params.error);
   const notice = noticeKey ? (NOTICES[noticeKey] ?? null) : null;
 

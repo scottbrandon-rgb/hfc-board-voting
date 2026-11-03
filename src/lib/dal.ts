@@ -2,8 +2,7 @@ import 'server-only';
 import { cache } from 'react';
 import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase/server';
-import { escapeLike } from '@/lib/utils';
+import { sessionMember } from '@/lib/auth';
 import type { Role } from '@/lib/rules';
 
 export type CurrentMember = {
@@ -14,20 +13,17 @@ export type CurrentMember = {
 };
 
 const getSession = cache(async () => {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user?.email) return { user: null, member: null };
-
-  const { data: member } = await supabase
-    .from('members')
-    .select('id, email, full_name, role')
-    .ilike('email', escapeLike(user.email))
-    .eq('is_active', true)
-    .maybeSingle();
-
-  return { user, member: (member as CurrentMember | null) ?? null };
+  const signedIn = await sessionMember();
+  if (!signedIn) return { user: null, member: null };
+  const member: CurrentMember | null = signedIn.is_active
+    ? {
+        id: signedIn.id,
+        email: signedIn.email,
+        full_name: signedIn.full_name,
+        role: signedIn.role as Role,
+      }
+    : null;
+  return { user: { id: signedIn.id }, member };
 });
 
 export async function getCurrentMember(): Promise<CurrentMember | null> {

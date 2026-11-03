@@ -10,7 +10,7 @@ import {
   type RosterEntry,
   type VoteSnapshot,
 } from '@/lib/queries';
-import { getPdfSignedUrl, PDF_STATUSES } from '@/lib/generate-pdf';
+import { getPdfUrl, PDF_STATUSES } from '@/lib/generate-pdf';
 import {
   canArchive,
   commentsOpen,
@@ -67,7 +67,7 @@ export default async function MotionPage({ params }: { params: Promise<{ id: str
   const canSeeRecord =
     (isChair || member.role === 'secretary') && PDF_STATUSES.includes(motion.status);
   const [pdfUrl, settings] = await Promise.all([
-    canSeeRecord ? getPdfSignedUrl(motion.id) : Promise.resolve(null),
+    canSeeRecord ? getPdfUrl(motion.id) : Promise.resolve(null),
     getBoardSettings(),
   ]);
 

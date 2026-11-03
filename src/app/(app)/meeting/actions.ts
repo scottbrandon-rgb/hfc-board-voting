@@ -3,7 +3,7 @@
 import { after } from 'next/server';
 import { revalidatePath } from 'next/cache';
 import { requireChairOrSecretary, requestContext, friendlyError } from '@/lib/dal';
-import { createAdminClient } from '@/lib/supabase/admin';
+import { query, rpc, safely } from '@/lib/db';
 import { boardLocalToIso } from '@/lib/format';
 import { notifyRatified } from '@/lib/notify';
 import { generateAndStorePdf } from '@/lib/generate-pdf';
@@ -34,23 +34,21 @@ export async function setNextMeeting(
   const iso = when ? boardLocalToIso(when) : null;
   if (when && !iso) return { status: 'error', message: 'Enter a valid date and time.' };
 
-  const admin = createAdminClient();
-  const { error } = await admin
-    .from('board_settings')
-    .update({
-      next_meeting_at: iso,
-      next_meeting_location: location || null,
-      updated_at: new Date().toISOString(),
-      updated_by: member.id,
-    })
-    .eq('id', true);
+  const { error } = await safely(() =>
+    query(
+      `update public.board_settings
+          set next_meeting_at = $1, next_meeting_location = $2, updated_at = now(), updated_by = $3
+        where id = true`,
+      [iso, location || null, member.id],
+    ),
+  );
   if (error) return { status: 'error', message: friendlyError(error) };
 
-  await admin.from('audit_log').insert({
-    member_id: member.id,
-    event_type: 'meeting_scheduled',
-    event_data: { next_meeting_at: iso, location: location || null },
-  });
+  await query(
+    `insert into public.audit_log (member_id, event_type, event_data)
+     values ($1, 'meeting_scheduled', $2)`,
+    [member.id, { next_meeting_at: iso, location: location || null }],
+  );
   refresh();
   return { status: 'success', message: 'Meeting saved.' };
 }
@@ -65,8 +63,7 @@ export async function ratifyMotions(
   if (ids.length === 0) return { status: 'error', message: 'Select at least one motion.' };
   if (!DATE.test(meetingDate)) return { status: 'error', message: 'Enter the meeting date.' };
 
-  const admin = createAdminClient();
-  const { data: count, error } = await admin.rpc('vote_ratify', {
+  const { data: count, error } = await rpc<number>('vote_ratify', {
     p_motion_ids: ids,
     p_member_id: member.id,
     p_meeting_date: meetingDate,
@@ -100,8 +97,7 @@ export async function recordOutcome(
   }
   if (!DATE.test(meetingDate)) return { status: 'error', message: 'Enter the meeting date.' };
 
-  const admin = createAdminClient();
-  const { error } = await admin.rpc('vote_record_in_person', {
+  const { error } = await rpc('vote_record_in_person', {
     p_motion_id: motionId,
     p_member_id: member.id,
     p_result: result,
