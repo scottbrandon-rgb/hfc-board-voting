@@ -5,8 +5,7 @@ import { Mail } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ErrorText } from '@/components/board/ui';
-import { createClient } from '@/lib/supabase/client';
-import { checkAllowlist } from './actions';
+import { sendCode as requestCode, verifyCode } from './actions';
 
 // The email waiting for a code survives the phone reloading this page while
 // the member switches to their mail app to read the code.
@@ -39,14 +38,6 @@ function writePending(p: Pending | null) {
   }
 }
 
-function sendErrorMessage(message: string): string {
-  const m = message.toLowerCase();
-  if (m.includes('rate') || m.includes('seconds') || m.includes('security purposes')) {
-    return 'A code was sent a moment ago. Wait a minute, then try again.';
-  }
-  return "We couldn't send a code just now. Please try again in a minute.";
-}
-
 export function LoginForm({ next, notice }: { next: string; notice: string | null }) {
   const [pending, setPending] = useState<Pending | null>(null);
   const [busy, setBusy] = useState(false);
@@ -59,16 +50,15 @@ export function LoginForm({ next, notice }: { next: string; notice: string | nul
   }, []);
 
   async function sendCode(email: string): Promise<boolean> {
-    const { error: sendError } = await createClient().auth.signInWithOtp({
-      email,
-      // Accounts are created by the board list, never by the sign-in form.
-      options: { shouldCreateUser: false },
-    });
-    if (sendError) {
-      setError(sendErrorMessage(sendError.message));
+    const result = await requestCode(email).catch(() => ({
+      status: 'error' as const,
+      message: "We couldn't send a code just now. Please try again in a minute.",
+    }));
+    if (result.status === 'error') {
+      setError(result.message);
       return false;
     }
-    const p = { email, sentAt: Date.now() };
+    const p = { email: result.email, sentAt: Date.now() };
     writePending(p);
     setPending(p);
     return true;
@@ -78,9 +68,9 @@ export function LoginForm({ next, notice }: { next: string; notice: string | nul
     e.preventDefault();
     setError(null);
     setBusy(true);
-    const result = await checkAllowlist({ status: 'idle' }, new FormData(e.currentTarget));
-    if (result.status === 'allowed') await sendCode(result.email);
-    else if (result.status === 'error') setError(result.message);
+    const email = String(new FormData(e.currentTarget).get('email') ?? '');
+    if (!email.trim()) setError('Enter your email address.');
+    else await sendCode(email);
     setBusy(false);
   }
 
@@ -175,18 +165,13 @@ function CodeStep({
     }
     setError(null);
     setVerifying(true);
-    const { error: verifyError } = await createClient().auth.verifyOtp({
-      email: pending.email,
-      token,
-      type: 'email',
-    });
-    if (verifyError) {
+    const result = await verifyCode(pending.email, token).catch(() => ({
+      status: 'error' as const,
+      message: 'Something went wrong. Check your connection and try again.',
+    }));
+    if (result.status === 'error') {
       setVerifying(false);
-      setError(
-        verifyError.message.toLowerCase().includes('expired')
-          ? 'That code has expired, or a newer one was sent. Use the latest code, or send a new one.'
-          : "That code didn't work. Check the digits and try again.",
-      );
+      setError(result.message);
       return;
     }
     writePending(null);

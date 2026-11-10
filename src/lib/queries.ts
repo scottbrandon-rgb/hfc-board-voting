@@ -1,7 +1,6 @@
 import 'server-only';
-import { createClient } from '@/lib/supabase/server';
-import { createAdminClient } from '@/lib/supabase/admin';
-import type { CurrentMember } from '@/lib/dal';
+import { query, queryOne } from '@/lib/db';
+import { seesDrafts, type CurrentMember } from '@/lib/dal';
 import {
   AGENDA_STATUSES,
   APPROVED_STATUSES,
@@ -13,9 +12,10 @@ import {
   type Progress,
 } from '@/lib/rules';
 
-// Reads use the member's own session, so the database's row-level security
-// still applies (drafts stay hidden from members, and so on). Queries run in
-// parallel; signed document links are created in a single request.
+// Every read here runs after requireMember() has checked the session. The one
+// visibility rule (once enforced by Supabase row-level security) is applied in
+// SQL: drafts are seen only by the chair, the secretary and whoever wrote them.
+// Queries run in parallel.
 
 export interface RosterEntry {
   id: string;
@@ -64,17 +64,23 @@ export interface VoteSnapshot {
 const SUMMARY_COLUMNS =
   'id, motion_number, title, status, rules, moved_by, voting_deadline, published_at, moved_at, decided_at, created_at, referral_reason, last_call_sent_at, archived_at';
 
-async function supabase() {
-  return createClient();
+/** SQL condition: may `viewer` see this motion row (aliased as the table)? */
+function visible(viewer: CurrentMember, values: unknown[]): string {
+  values.push(viewer.id, seesDrafts(viewer));
+  const id = values.length - 1;
+  return `(status <> 'draft' or created_by = $${id} or $${id + 1}::boolean)`;
+}
+
+/** Adds a list of values to a query as one array parameter. */
+function list(values: unknown[], items: readonly string[]): string {
+  values.push([...items]);
+  return `$${values.length}::text[]`;
 }
 
 export async function getRoster(): Promise<RosterEntry[]> {
-  const db = await supabase();
-  const { data } = await db
-    .from('members')
-    .select('id, full_name, role, is_active')
-    .order('full_name');
-  return data ?? [];
+  return query<RosterEntry>(
+    'select id, full_name, role, is_active from public.members order by full_name',
+  );
 }
 
 /** Ballots and voting lists for a set of motions, keyed by motion id. */
@@ -84,28 +90,29 @@ export async function getVoteSnapshots(
 ): Promise<Map<string, VoteSnapshot>> {
   const map = new Map<string, VoteSnapshot>();
   if (motionIds.length === 0) return map;
-  const db = await supabase();
-  const [{ data: electorate }, { data: votes }] = await Promise.all([
-    db
-      .from('motion_electorate')
-      .select('motion_id, member_id')
-      .in('motion_id', [...motionIds]),
-    db
-      .from('votes')
-      .select('motion_id, member_id, vote, reason, note, cast_at, updated_at, change_count')
-      .in('motion_id', [...motionIds]),
+  const ids = [...motionIds];
+  const [electorate, votes] = await Promise.all([
+    query<{ motion_id: string; member_id: string }>(
+      'select motion_id, member_id from public.motion_electorate where motion_id = any($1::uuid[])',
+      [ids],
+    ),
+    query<Ballot & { motion_id: string }>(
+      `select motion_id, member_id, vote, reason, note, cast_at, updated_at, change_count
+         from public.votes where motion_id = any($1::uuid[])`,
+      [ids],
+    ),
   ]);
 
   for (const id of motionIds) {
-    const list = (electorate ?? []).filter((e) => e.motion_id === id).map((e) => e.member_id);
-    const ballots = (votes ?? []).filter((v) => v.motion_id === id);
+    const voters = electorate.filter((e) => e.motion_id === id).map((e) => e.member_id);
+    const ballots = votes.filter((v) => v.motion_id === id);
     const mine = ballots.find((b) => b.member_id === viewer.id) ?? null;
     map.set(id, {
-      progress: computeProgress(list, ballots),
-      electorate: list,
+      progress: computeProgress(voters, ballots),
+      electorate: voters,
       ballots,
       mine,
-      viewerNeedsToVote: list.includes(viewer.id) && !mine && isVotingRole(viewer.role),
+      viewerNeedsToVote: voters.includes(viewer.id) && !mine && isVotingRole(viewer.role),
     });
   }
   return map;
@@ -117,11 +124,9 @@ export interface BoardSettings {
 }
 
 export async function getBoardSettings(): Promise<BoardSettings> {
-  const db = await supabase();
-  const { data } = await db
-    .from('board_settings')
-    .select('next_meeting_at, next_meeting_location')
-    .maybeSingle();
+  const data = await queryOne<BoardSettings>(
+    'select next_meeting_at, next_meeting_location from public.board_settings limit 1',
+  );
   return {
     next_meeting_at: data?.next_meeting_at ?? null,
     next_meeting_location: data?.next_meeting_location ?? null,
@@ -140,30 +145,29 @@ export interface HomeData {
   toRatifyCount: number;
 }
 
-export async function getHomeData(viewer: CurrentMember): Promise<HomeData> {
-  const db = await supabase();
-  const [{ data: motions }, roster, settings, { count: agendaCount }, { count: toRatifyCount }] =
-    await Promise.all([
-      db
-        .from('motions')
-        .select(SUMMARY_COLUMNS)
-        .in('status', [...IN_PROGRESS_STATUSES, 'draft'])
-        .order('created_at', { ascending: false }),
-      getRoster(),
-      getBoardSettings(),
-      db
-        .from('motions')
-        .select('id', { count: 'exact', head: true })
-        .in('status', [...AGENDA_STATUSES])
-        .is('archived_at', null),
-      db
-        .from('motions')
-        .select('id', { count: 'exact', head: true })
-        .in('status', [...TO_RATIFY_STATUSES])
-        .is('archived_at', null),
-    ]);
+async function countMotions(statuses: readonly string[], viewer: CurrentMember): Promise<number> {
+  const values: unknown[] = [];
+  const row = await queryOne<{ n: number }>(
+    `select count(*)::int as n from public.motions
+      where status = any(${list(values, statuses)}) and archived_at is null and ${visible(viewer, values)}`,
+    values,
+  );
+  return row?.n ?? 0;
+}
 
-  const all = motions ?? [];
+export async function getHomeData(viewer: CurrentMember): Promise<HomeData> {
+  const values: unknown[] = [];
+  const motionsSql = `select ${SUMMARY_COLUMNS} from public.motions
+      where status = any(${list(values, [...IN_PROGRESS_STATUSES, 'draft'])}) and ${visible(viewer, values)}
+      order by created_at desc`;
+  const [all, roster, settings, agendaCount, toRatifyCount] = await Promise.all([
+    query<MotionSummary>(motionsSql, values),
+    getRoster(),
+    getBoardSettings(),
+    countMotions(AGENDA_STATUSES, viewer),
+    countMotions(TO_RATIFY_STATUSES, viewer),
+  ]);
+
   const inProgress = all.filter((m) => m.status !== 'draft');
   const drafts = all.filter((m) => m.status === 'draft');
   const snapshots = await getVoteSnapshots(
@@ -171,15 +175,7 @@ export async function getHomeData(viewer: CurrentMember): Promise<HomeData> {
     viewer,
   );
 
-  return {
-    inProgress,
-    drafts,
-    snapshots,
-    roster,
-    settings,
-    agendaCount: agendaCount ?? 0,
-    toRatifyCount: toRatifyCount ?? 0,
-  };
+  return { inProgress, drafts, snapshots, roster, settings, agendaCount, toRatifyCount };
 }
 
 // ─── Motions list ─────────────────────────────────────────────────────────────
@@ -194,26 +190,32 @@ export function parseFilter(value: string | undefined): MotionFilter {
 
 export async function listMotions(
   filter: MotionFilter,
-  query: string,
+  search: string,
   viewer: CurrentMember,
 ): Promise<{ motions: MotionSummary[]; snapshots: Map<string, VoteSnapshot> }> {
-  const db = await supabase();
-  let q = db.from('motions').select(SUMMARY_COLUMNS);
+  const values: unknown[] = [];
+  const where: string[] = [visible(viewer, values)];
 
-  if (filter === 'open') q = q.in('status', [...IN_PROGRESS_STATUSES]);
-  else if (filter === 'approved') q = q.in('status', [...APPROVED_STATUSES]);
-  else if (filter === 'referred') q = q.in('status', [...REFERRED_STATUSES]);
-  else if (filter === 'drafts') q = q.eq('status', 'draft');
-  else q = q.neq('status', 'draft');
+  if (filter === 'open') where.push(`status = any(${list(values, IN_PROGRESS_STATUSES)})`);
+  else if (filter === 'approved') where.push(`status = any(${list(values, APPROVED_STATUSES)})`);
+  else if (filter === 'referred') where.push(`status = any(${list(values, REFERRED_STATUSES)})`);
+  else if (filter === 'drafts') where.push(`status = 'draft'`);
+  else where.push(`status <> 'draft'`);
 
-  const term = query
+  const term = search
     .trim()
-    .replace(/[%_,()"\\*:]/g, ' ')
+    .replace(/[%_\\]/g, ' ')
     .trim();
-  if (term) q = q.or(`title.ilike.%${term}%,motion_number.ilike.%${term}%`);
+  if (term) {
+    values.push(`%${term}%`);
+    where.push(`(title ilike $${values.length} or motion_number ilike $${values.length})`);
+  }
 
-  const { data } = await q.order('created_at', { ascending: false }).limit(200);
-  const motions = data ?? [];
+  const motions = await query<MotionSummary>(
+    `select ${SUMMARY_COLUMNS} from public.motions where ${where.join(' and ')}
+      order by created_at desc limit 200`,
+    values,
+  );
   const snapshots = await getVoteSnapshots(
     motions.filter((m) => m.status === 'voting').map((m) => m.id),
     viewer,
@@ -223,44 +225,96 @@ export async function listMotions(
 
 // ─── Motion detail ────────────────────────────────────────────────────────────
 
+export interface MotionRecord {
+  id: string;
+  motion_number: string;
+  title: string;
+  description: string;
+  background: string | null;
+  status: string;
+  rules: string;
+  result: string | null;
+  created_by: string | null;
+  created_at: string;
+  moved_by: string | null;
+  moved_at: string | null;
+  seconded_by: string | null;
+  seconded_at: string | null;
+  published_at: string | null;
+  voting_opened_at: string | null;
+  voting_deadline: string | null;
+  voting_period_days: number;
+  electorate_size: number | null;
+  decided_at: string | null;
+  ratified_at: string | null;
+  ratified_by: string | null;
+  withdrawn_at: string | null;
+  archived_at: string | null;
+  archived_by: string | null;
+  motion_text_hash: string | null;
+  deadline_extended_at: string | null;
+  deadline_extension_note: string | null;
+  referred_at: string | null;
+  referred_by: string | null;
+  referral_reason: string | null;
+  referral_note: string | null;
+  reminder_24h_sent_at: string | null;
+  reminder_final_sent_at: string | null;
+  last_call_sent_at: string | null;
+  meeting_date: string | null;
+  in_person_result: string | null;
+  in_person_note: string | null;
+  in_person_recorded_at: string | null;
+  in_person_recorded_by: string | null;
+}
+
+/** Can `viewer` see this motion? (Drafts: chair, secretary, author.) */
+export async function canSeeMotion(motionId: string, viewer: CurrentMember): Promise<boolean> {
+  const values: unknown[] = [motionId];
+  const row = await queryOne<{ id: string }>(
+    `select id from public.motions where id = $1 and ${visible(viewer, values)}`,
+    values,
+  );
+  return row !== null;
+}
+
 export async function getMotionDetail(id: string, viewer: CurrentMember) {
-  const db = await supabase();
-  const { data: motion } = await db.from('motions').select('*').eq('id', id).maybeSingle();
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
+  const values: unknown[] = [id];
+  const motion = await queryOne<MotionRecord>(
+    `select * from public.motions where id = $1 and ${visible(viewer, values)}`,
+    values,
+  );
   if (!motion) return null;
 
-  const [roster, { data: attachments }, { data: comments }, snapshots] = await Promise.all([
+  const [roster, attachments, comments, snapshots] = await Promise.all([
     getRoster(),
-    db
-      .from('motion_attachments')
-      .select('id, file_name, file_size, content_type, storage_path, uploaded_at')
-      .eq('motion_id', id)
-      .order('uploaded_at'),
-    db
-      .from('comments')
-      .select('id, body, created_at, member_id')
-      .eq('motion_id', id)
-      .order('created_at'),
+    query<{
+      id: string;
+      file_name: string;
+      file_size: number;
+      content_type: string;
+      storage_path: string;
+      uploaded_at: string;
+    }>(
+      `select id, file_name, file_size, content_type, storage_path, uploaded_at
+         from public.motion_attachments where motion_id = $1 order by uploaded_at`,
+      [id],
+    ),
+    query<{ id: string; body: string; created_at: string; member_id: string | null }>(
+      `select id, body, created_at, member_id from public.comments
+        where motion_id = $1 order by created_at`,
+      [id],
+    ),
     getVoteSnapshots([id], viewer),
   ]);
-
-  // Signed, short-lived links, created in one request.
-  const admin = createAdminClient();
-  const links = new Map<string, string>();
-  if (attachments?.length) {
-    const { data } = await admin.storage.from('motion-attachments').createSignedUrls(
-      attachments.map((a) => a.storage_path),
-      3600,
-    );
-    for (const row of data ?? []) {
-      if (row.path && row.signedUrl) links.set(row.path, row.signedUrl);
-    }
-  }
 
   return {
     motion,
     roster,
-    attachments: (attachments ?? []).map((a) => ({ ...a, url: links.get(a.storage_path) ?? null })),
-    comments: comments ?? [],
+    // Documents are served through the app, which checks the session first.
+    attachments: attachments.map((a) => ({ ...a, url: `/files/attachments/${a.id}` })),
+    comments,
     snapshot: snapshots.get(id)!,
   };
 }
@@ -268,38 +322,36 @@ export async function getMotionDetail(id: string, viewer: CurrentMember) {
 // ─── Meeting ──────────────────────────────────────────────────────────────────
 
 export async function getMeetingData(viewer: CurrentMember) {
-  const db = await supabase();
-  const [settings, roster, { data: agenda }, { data: toRatify }, { data: voting }] =
-    await Promise.all([
-      getBoardSettings(),
-      getRoster(),
-      db
-        .from('motions')
-        .select(`${SUMMARY_COLUMNS}, referral_note, referred_by, in_person_note, meeting_date`)
-        .in('status', [...AGENDA_STATUSES])
-        .is('archived_at', null)
-        .order('referred_at', { ascending: true }),
-      db
-        .from('motions')
-        .select(`${SUMMARY_COLUMNS}, electorate_size`)
-        .in('status', [...TO_RATIFY_STATUSES])
-        .is('archived_at', null)
-        .order('decided_at', { ascending: true }),
-      db.from('motions').select(SUMMARY_COLUMNS).eq('status', 'voting'),
-    ]);
+  const agendaValues: unknown[] = [];
+  const agendaSql = `select ${SUMMARY_COLUMNS}, referral_note, referred_by, in_person_note, meeting_date
+      from public.motions
+     where status = any(${list(agendaValues, AGENDA_STATUSES)}) and archived_at is null
+     order by referred_at asc nulls last`;
+  const ratifyValues: unknown[] = [];
+  const ratifySql = `select ${SUMMARY_COLUMNS}, electorate_size from public.motions
+     where status = any(${list(ratifyValues, TO_RATIFY_STATUSES)}) and archived_at is null
+     order by decided_at asc nulls last`;
+
+  const [settings, roster, agenda, toRatify, voting] = await Promise.all([
+    getBoardSettings(),
+    getRoster(),
+    query<
+      MotionSummary & {
+        referral_note: string | null;
+        referred_by: string | null;
+        in_person_note: string | null;
+        meeting_date: string | null;
+      }
+    >(agendaSql, agendaValues),
+    query<MotionSummary & { electorate_size: number | null }>(ratifySql, ratifyValues),
+    query<MotionSummary>(`select ${SUMMARY_COLUMNS} from public.motions where status = 'voting'`),
+  ]);
 
   const snapshots = await getVoteSnapshots(
-    [...(agenda ?? []).map((m) => m.id), ...(voting ?? []).map((m) => m.id)],
+    [...agenda.map((m) => m.id), ...voting.map((m) => m.id)],
     viewer,
   );
-  const mayBeAdded = (voting ?? []).filter((m) => (snapshots.get(m.id)?.progress.others ?? 0) > 0);
+  const mayBeAdded = voting.filter((m) => (snapshots.get(m.id)?.progress.others ?? 0) > 0);
 
-  return {
-    settings,
-    roster,
-    agenda: agenda ?? [],
-    toRatify: toRatify ?? [],
-    mayBeAdded,
-    snapshots,
-  };
+  return { settings, roster, agenda, toRatify, mayBeAdded, snapshots };
 }

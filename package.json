@@ -15,8 +15,9 @@
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",
+    "@netlify/blobs": "^11.1.9",
+    "@netlify/database": "^2.0.3",
     "@react-pdf/renderer": "^4.5.1",
-    "@supabase/ssr": "^0.10.2",
     "@supabase/supabase-js": "^2.105.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -33,6 +34,7 @@
     "@netlify/functions": "^5.2.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",

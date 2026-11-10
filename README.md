@@ -1,8 +1,11 @@
 # HFC Deacon Board
 
 Motions, online votes and meeting records for the Harrison Faith Church Deacon
-Board. Next.js 16 (App Router) on Netlify, Supabase (Postgres, auth, storage),
-Resend for email.
+Board. Next.js 16 (App Router), all on Netlify: Netlify Database (Postgres),
+Netlify Blobs (documents and PDF records) and the app's own email-code sign-in.
+Resend sends the email.
+
+Moving from Supabase? Follow `MIGRATION.md`.
 
 ## Online voting rules
 
@@ -20,17 +23,38 @@ Resend for email.
   voted Aye, the motion is approved. Anything else at the deadline sends it to
   the in-person meeting. Approved motions are ratified at the next meeting.
 
-The rules are enforced in the database (`supabase/migrations/015_unanimous_voting.sql`):
-server actions call functions that only the service role can run, and
-triggers keep the record append-only. `src/lib/rules.ts` holds the shared
-labels and calculations.
+The rules are enforced in the database (`netlify/database/migrations/0001_baseline.sql`):
+server actions call the `vote_*` functions, and triggers keep the record
+append-only. `src/lib/rules.ts` holds the shared labels and calculations.
+
+## How it fits together
+
+- **Database:** `src/lib/db.ts` (Netlify Database through `@netlify/database`).
+  Netlify applies `netlify/database/migrations` before each deploy is
+  published; a failing migration stops the deploy. Add changes as new
+  numbered files (`0003_….sql`); never edit one that has shipped.
+- **Sign-in:** `src/lib/session.ts`. An 8-digit code by email (only to active
+  board members), then a 90-day session in an HTTP-only cookie. The database
+  stores only hashes of codes and session tokens.
+- **Who sees what:** every page and action checks the session in
+  `src/lib/dal.ts`. Drafts are visible to the chair, the secretary and their
+  author (`src/lib/queries.ts`).
+- **Files:** `src/lib/storage.ts` (Netlify Blobs; private, read only through
+  `/files/...` after the session check). Uploads go in 4 MB pieces through
+  `/api/attachments/upload`; documents are limited to 20 MB.
+- **Previews:** deploy previews get their own copy of the database and their
+  own file stores, and log notices instead of emailing the board. Sign-in
+  codes are still sent.
 
 ## Development
 
 ```bash
-cp .env.local.example .env.local   # fill in Supabase, Resend and CRON_SECRET
+cp .env.local.example .env.local   # a local Postgres URL, CRON_SECRET
+createdb hfc_board
+for f in netlify/database/migrations/*.sql; do psql hfc_board -f "$f"; done
+psql hfc_board -f tests/db/fixtures.sql   # optional: a sample board
 npm install
-npm run dev
+npm run dev                          # sign-in codes print in this terminal
 ```
 
 ## Checks
@@ -40,7 +64,7 @@ npm run lint
 npx tsc --noEmit
 npm test          # unit tests (Node's built-in test runner)
 npm run test:db   # applies every migration to a scratch local PostgreSQL
-                  # database and runs the voting-engine tests
+                  # database and runs the voting-engine tests in tests/db
                   # (needs psql; set PGURL if not postgres:postgres@localhost)
 npm run build
 ```

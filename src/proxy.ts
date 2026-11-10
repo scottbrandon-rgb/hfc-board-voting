@@ -1,40 +1,22 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { createServerClient } from '@supabase/ssr';
 import { safeNext } from '@/lib/safe-next';
 
-// Next.js 16 renamed Middleware to Proxy. This file refreshes the Supabase
-// auth session on every request and gates the board pages behind sign-in.
-export async function proxy(request: NextRequest) {
-  let response = NextResponse.next({ request });
+// Next.js 16 renamed Middleware to Proxy. This is the quick check at the door:
+// no session cookie, no board pages. The real check (is the session valid, is
+// the member still active?) happens on the server, in src/lib/dal.ts, for
+// every page and action. Proxy also renews the cookie's lifetime on each
+// visit, so a member who uses the site stays signed in.
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll();
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
-          response = NextResponse.next({ request });
-          cookiesToSet.forEach(({ name, value, options }) =>
-            response.cookies.set(name, value, options),
-          );
-        },
-      },
-    },
-  );
+const SESSION_COOKIE = 'hfc_session'; // keep in step with src/lib/session.ts
+const SESSION_SECONDS = 90 * 24 * 60 * 60;
 
-  // Required: refresh the access token if expired.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
+export function proxy(request: NextRequest) {
   const path = request.nextUrl.pathname;
   const isAuthPath = path === '/login' || path.startsWith('/auth/');
+  const token = request.cookies.get(SESSION_COOKIE)?.value;
 
-  if (!user && !isAuthPath) {
+  if (!token) {
+    if (isAuthPath) return NextResponse.next();
     const url = request.nextUrl.clone();
     url.pathname = '/login';
     url.search = '';
@@ -46,20 +28,26 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  if (user && path === '/login') {
-    const url = new URL(safeNext(request.nextUrl.searchParams.get('next')), request.url);
-    return NextResponse.redirect(url);
+  const response = NextResponse.next();
+  if (!path.startsWith('/auth/')) {
+    response.cookies.set(SESSION_COOKIE, token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: SESSION_SECONDS,
+    });
   }
-
   return response;
 }
 
 export const config = {
   matcher: [
-    // Everything except: Next.js internals and static files; the scheduled-jobs
-    // and health endpoints (they authenticate themselves, and the scheduler has
-    // no session); and the app manifest and icons, which phones fetch without
-    // the member's sign-in when adding the site to the home screen.
-    '/((?!_next/static|_next/image|api/cron|api/health|manifest\\.webmanifest|icon|apple-icon|favicon\\.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)',
+    // Everything except: Next.js internals and static files; the scheduled-jobs,
+    // health and one-time migration endpoints (they authenticate themselves
+    // with CRON_SECRET, and callers have no session); and the app manifest and
+    // icons, which phones fetch without the member's sign-in when adding the
+    // site to the home screen.
+    '/((?!_next/static|_next/image|api/cron|api/health|api/migrate|manifest\\.webmanifest|icon|apple-icon|favicon\\.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)',
   ],
 };

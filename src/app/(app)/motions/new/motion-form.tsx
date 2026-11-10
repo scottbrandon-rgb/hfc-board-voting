@@ -8,18 +8,38 @@ import { Button, buttonVariants } from '@/components/ui/button';
 import { Input, Textarea } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ErrorText } from '@/components/board/ui';
-import { createClient } from '@/lib/supabase/client';
 import { formatBytes } from '@/lib/format';
 import {
   ACCEPTED_FILE_TYPES,
   DEFAULT_VOTING_PERIOD,
   MAX_ATTACHMENT_BYTES,
+  MAX_ATTACHMENT_LABEL,
   MAX_ATTACHMENTS,
+  UPLOAD_CHUNK_BYTES,
   VOTING_PERIOD_CHOICES,
 } from '@/lib/rules';
 import { prepareUpload, registerAttachment, removeAttachment, saveMotion } from './actions';
 import { publishDraft } from '../[id]/actions';
 import { cn } from '@/lib/utils';
+
+/** Sends a file to the server in pieces small enough for Netlify functions. */
+async function uploadInParts(file: File, path: string, parts: number): Promise<boolean> {
+  for (let part = 0; part < parts; part++) {
+    const piece = file.slice(part * UPLOAD_CHUNK_BYTES, (part + 1) * UPLOAD_CHUNK_BYTES);
+    const url = `/api/attachments/upload?path=${encodeURIComponent(path)}&part=${part}`;
+    try {
+      const res = await fetch(url, {
+        method: 'PUT',
+        body: piece,
+        headers: { 'content-type': file.type || 'application/octet-stream' },
+      });
+      if (!res.ok) return false;
+    } catch {
+      return false;
+    }
+  }
+  return true;
+}
 
 export interface MotionFormInitial {
   motionId: string;
@@ -31,9 +51,8 @@ export interface MotionFormInitial {
 }
 
 /**
- * New motion, or edit a draft. Documents upload straight from the browser to
- * private storage (no size limit from the web server), then the server
- * fingerprints and records each one.
+ * New motion, or edit a draft. Documents upload in pieces to private storage,
+ * then the server joins, fingerprints and records each one.
  */
 export function MotionForm({ initial }: { initial?: MotionFormInitial }) {
   const router = useRouter();
@@ -56,7 +75,7 @@ export function MotionForm({ initial }: { initial?: MotionFormInitial }) {
     const incoming = Array.from(list ?? []);
     const tooBig = incoming.find((f) => f.size > MAX_ATTACHMENT_BYTES);
     if (tooBig) {
-      setError(`"${tooBig.name}" is over the 25 MB limit.`);
+      setError(`"${tooBig.name}" is over the ${MAX_ATTACHMENT_LABEL} limit.`);
       return;
     }
     if (total + incoming.length > MAX_ATTACHMENTS) {
@@ -93,7 +112,6 @@ export function MotionForm({ initial }: { initial?: MotionFormInitial }) {
     const id = saved.motionId;
     setMotionId(id);
 
-    const supabase = createClient();
     const queue = [...files];
     for (const [i, file] of queue.entries()) {
       setBusy(`Uploading ${i + 1} of ${queue.length}…`);
@@ -102,15 +120,18 @@ export function MotionForm({ initial }: { initial?: MotionFormInitial }) {
         setBusy(null);
         return setError(`Your draft is saved, but ${target.message}`);
       }
-      const { error: uploadError } = await supabase.storage
-        .from('motion-attachments')
-        .uploadToSignedUrl(target.path, target.token, file, { contentType: file.type });
-      const registered = uploadError
+      const uploaded = await uploadInParts(file, target.path, target.parts);
+      const registered = !uploaded
         ? {
             ok: false as const,
             message: `"${file.name}" did not upload. Check your connection and try again.`,
           }
-        : await registerAttachment(id, { path: target.path, name: file.name });
+        : await registerAttachment(id, {
+            path: target.path,
+            name: file.name,
+            type: file.type,
+            parts: target.parts,
+          });
       if (!registered.ok) {
         setBusy(null);
         return setError(`Your draft is saved, but ${registered.message}`);
@@ -253,7 +274,9 @@ export function MotionForm({ initial }: { initial?: MotionFormInitial }) {
           <Paperclip aria-hidden="true" />
           Add documents
         </Button>
-        <p className="text-caption text-ink-3">PDF, Word, Excel or photos, up to 25 MB each.</p>
+        <p className="text-caption text-ink-3">
+          PDF, Word, Excel or photos, up to {MAX_ATTACHMENT_LABEL} each.
+        </p>
       </div>
 
       <fieldset className="flex flex-col gap-2">
