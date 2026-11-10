@@ -32,11 +32,11 @@ unavailable for 5 to 10 minutes at the switch.
 
 ## Before you start
 
-1. **Resend must be able to send from `harrisonfaith.org`.** This is the one
-   thing that can lock everyone out: sign-in codes now come from Resend, not
-   Supabase. In resend.com → Domains, `harrisonfaith.org` must show
-   **Verified**. If it doesn't, add the DNS records Resend lists and wait for
-   verification before going further.
+1. **Resend is already set up.** Sign-in codes now come from Resend instead of
+   Supabase, so one quick check: the domain in `RESEND_FROM_EMAIL` on Netlify
+   (today `board@harrisonfaith.org`) must be the domain shown as **Verified**
+   in resend.com → Domains. If they differ, change `RESEND_FROM_EMAIL` to an
+   address on the verified domain.
 2. **Check the Netlify plan.** Netlify Database runs on credit-based plans. The
    Free plan is enough for the board (5 GB, which is far more than you need)
    but keeps only 3 days of backups; Pro keeps 30. Decide which you want.

@@ -71,14 +71,12 @@ Sign-in codes are still sent, so testers can sign in.)
 
 ## Resend
 
-### 🔲 Verify the sending domain (required: sign-in depends on it)
+### ✅ Account and sending domain set up
 
-Sign-in codes are emailed by Resend. If the domain is not verified, Resend
-refuses the mail and **nobody can sign in**.
-
-1. resend.com → Domains → Add Domain → `harrisonfaith.org`
-2. Add the DKIM, SPF and DMARC records it lists at your DNS provider
-3. Confirm `RESEND_FROM_EMAIL=board@harrisonfaith.org` is set on Netlify
+Sign-in codes and notices are emailed by Resend, so keep these in step: the
+domain in `RESEND_FROM_EMAIL` on Netlify (today `board@harrisonfaith.org`)
+must stay **Verified** in resend.com → Domains. If Resend ever refuses the
+mail, nobody can sign in.
 
 ---
 
@@ -102,7 +100,7 @@ tables, the number of active members and both file stores.
 
 ## Go-live checklist
 
-- [ ] Resend domain verified
+- [x] Resend set up (sending domain matches `RESEND_FROM_EMAIL`)
 - [ ] `/api/health` returns ok (detailed view: every check `ok`/`set`)
 - [ ] Board page shows all five seats filled; secretary set
 - [ ] One motion taken through the whole process: draft (with a document) →
