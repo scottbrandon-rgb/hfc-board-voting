@@ -102,6 +102,11 @@ interface TemplateInput {
   /** Short line above the title, e.g. the motion number. */
   eyebrow?: string;
   title: string;
+  /**
+   * A one-time code, shown large on its own. One tap selects the whole code
+   * (email apps run no scripts, so a copy button is not possible).
+   */
+  code?: string;
   /** Plain-text paragraphs; escaped before use. */
   paragraphs: string[];
   /** Optional quoted note (a member's or the chair's words). */
@@ -112,6 +117,7 @@ interface TemplateInput {
 export function render({
   eyebrow,
   title,
+  code,
   paragraphs,
   quote,
   button,
@@ -130,6 +136,12 @@ export function render({
 <tr><td style="padding:16px 24px 8px;">
 ${eyebrow ? `<p style="margin:0 0 4px;color:#5b6168;font-size:14px;">${escapeHtml(eyebrow)}</p>` : ''}
 <h1 style="margin:0 0 16px;color:#16191d;font-size:22px;line-height:28px;font-weight:700;">${escapeHtml(title)}</h1>
+${
+  code
+    ? `<div style="margin:0 0 6px;padding:18px 12px;background:#f4f5f7;border:1px dashed #c3c9d0;border-radius:12px;text-align:center;"><span style="font-family:'SF Mono',Menlo,Consolas,'Courier New',monospace;font-size:34px;line-height:40px;font-weight:700;letter-spacing:6px;color:#16191d;-webkit-user-select:all;user-select:all;">${escapeHtml(code)}</span></div>
+<p style="margin:0 0 16px;color:#5b6168;font-size:14px;line-height:20px;text-align:center;">Tap the code to select it, then choose Copy.</p>`
+    : ''
+}
 ${paragraphs.map(p).join('\n')}
 ${
   quote
@@ -156,6 +168,7 @@ ${
     eyebrow ?? '',
     title,
     '',
+    ...(code ? [code, ''] : []),
     ...paragraphs.flatMap((t) => [t, '']),
     ...(quote ? [`"${quote.text}"${quote.by ? ` — ${quote.by}` : ''}`, ''] : []),
     ...(button ? [`${button.label}: ${button.href}`, ''] : []),
@@ -171,9 +184,10 @@ ${
 export function signInCodeMessage(code: string): Message {
   const { html, text } = render({
     title: 'Your sign-in code',
+    code,
     paragraphs: [
-      `Enter this code on the board site to sign in: ${code}`,
-      'It works for one hour. If you did not ask for it, you can ignore this email.',
+      'Enter this code on the board site to sign in. It works for one hour.',
+      'If you did not ask for it, you can ignore this email.',
     ],
   });
   return { subject: `${code} is your Deacon Board sign-in code`, html, text };
