@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { ChevronRight, LogOut, Users } from 'lucide-react';
 import { requireMember } from '@/lib/dal';
-import { createClient } from '@/lib/supabase/server';
+import { queryOne } from '@/lib/db';
 import { ROLE_LABELS, isVotingRole } from '@/lib/rules';
 import { Card, PageTitle, SectionHeading } from '@/components/board/ui';
 import { MobileBrand } from '@/components/board/nav';
@@ -13,12 +13,14 @@ export const metadata = { title: 'Profile' };
 
 export default async function ProfilePage() {
   const member = await requireMember();
-  const supabase = await createClient();
-  const { data: prefs } = await supabase
-    .from('members')
-    .select('notify_new_motions, notify_comments, notify_results')
-    .eq('id', member.id)
-    .maybeSingle();
+  const prefs = await queryOne<{
+    notify_new_motions: boolean;
+    notify_comments: boolean;
+    notify_results: boolean;
+  }>(
+    'select notify_new_motions, notify_comments, notify_results from public.members where id = $1',
+    [member.id],
+  );
 
   return (
     <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-5 pt-4 md:px-8 md:pt-8">

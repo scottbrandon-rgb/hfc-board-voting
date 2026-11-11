@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { ChevronRight, User } from 'lucide-react';
 import { requireChair } from '@/lib/dal';
-import { createAdminClient } from '@/lib/supabase/admin';
+import { query } from '@/lib/db';
 import { isVotingRole, type Role } from '@/lib/rules';
 import { Card, EmptyState, PageTitle, SectionHeading } from '@/components/board/ui';
 import { MobileBrand } from '@/components/board/nav';
@@ -17,10 +17,11 @@ const VOTING_SEATS = 5;
 
 export default async function BoardPage() {
   const me = await requireChair();
-  const admin = createAdminClient();
-  const { data } = await admin.from('members').select('id, full_name, email, role, is_active');
+  const data = await query<MemberRowData>(
+    'select id, full_name, email, role, is_active from public.members',
+  );
 
-  const members = ((data ?? []) as MemberRowData[]).sort(
+  const members = data.sort(
     (a, b) => ROLE_ORDER[a.role] - ROLE_ORDER[b.role] || a.full_name.localeCompare(b.full_name),
   );
   const active = members.filter((m) => m.is_active);

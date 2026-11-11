@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { ChevronLeft } from 'lucide-react';
 import { requireChair } from '@/lib/dal';
-import { createClient } from '@/lib/supabase/server';
+import { query, queryOne } from '@/lib/db';
 import { MotionForm } from '../../new/motion-form';
 
 export const metadata = { title: 'Edit draft' };
@@ -10,18 +10,25 @@ export const metadata = { title: 'Edit draft' };
 export default async function EditDraftPage({ params }: { params: Promise<{ id: string }> }) {
   await requireChair();
   const { id } = await params;
-  const supabase = await createClient();
-  const [{ data: motion }, { data: attachments }] = await Promise.all([
-    supabase
-      .from('motions')
-      .select('id, status, title, description, background, voting_period_days')
-      .eq('id', id)
-      .maybeSingle(),
-    supabase
-      .from('motion_attachments')
-      .select('id, file_name, file_size')
-      .eq('motion_id', id)
-      .order('uploaded_at'),
+  if (!/^[0-9a-f-]{36}$/i.test(id)) notFound();
+  const [motion, attachments] = await Promise.all([
+    queryOne<{
+      id: string;
+      status: string;
+      title: string;
+      description: string;
+      background: string | null;
+      voting_period_days: number;
+    }>(
+      `select id, status, title, description, background, voting_period_days
+         from public.motions where id = $1`,
+      [id],
+    ),
+    query<{ id: string; file_name: string; file_size: number }>(
+      `select id, file_name, file_size from public.motion_attachments
+        where motion_id = $1 order by uploaded_at`,
+      [id],
+    ),
   ]);
   if (!motion) notFound();
   if (motion.status !== 'draft') redirect(`/motions/${id}`);

@@ -12,7 +12,7 @@ import {
   todayInBoardTz,
 } from '../../src/lib/format.ts';
 import { safeNext } from '../../src/lib/safe-next.ts';
-import { cn, escapeLike } from '../../src/lib/utils.ts';
+import { cn } from '../../src/lib/utils.ts';
 
 const NOW = new Date('2026-10-21T15:00:00Z');
 
@@ -66,12 +66,6 @@ test('sign-in only returns to pages on this site', () => {
   assert.equal(safeNext('https://evil.example'), '/');
   assert.equal(safeNext('/login'), '/');
   assert.equal(safeNext(null), '/');
-});
-
-test('email lookups treat LIKE wildcards literally', () => {
-  assert.equal(escapeLike('j_hn@x.org'), 'j\\_hn@x.org');
-  assert.equal(escapeLike('a%b@x.org'), 'a\\%b@x.org');
-  assert.equal(escapeLike('plain@x.org'), 'plain@x.org');
 });
 
 test('class merging keeps text colors alongside the board text sizes', () => {

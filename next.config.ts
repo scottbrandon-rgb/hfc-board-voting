@@ -1,14 +1,17 @@
 import type { NextConfig } from 'next';
 
-const APP_URL = process.env.APP_URL ?? 'https://board.harrisonfaith.church';
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
-
 const nextConfig: NextConfig = {
   serverExternalPackages: ['@react-pdf/renderer'],
+  // Netlify's CONTEXT (production, deploy-preview, branch-deploy) is known at
+  // build time only; fixing it into the build lets previews keep their own
+  // file storage and skip emailing the board (src/lib/storage.ts, email.ts).
+  env: {
+    DEPLOY_CONTEXT: process.env.CONTEXT ?? 'dev',
+  },
   experimental: {
     serverActions: {
-      // Attachments upload straight to storage from the browser, so form
-      // submissions are small. A low limit keeps oversized requests out.
+      // Attachments upload in pieces to their own route, so form submissions
+      // are small. A low limit keeps oversized requests out.
       bodySizeLimit: '2mb',
     },
   },
@@ -37,16 +40,16 @@ const nextConfig: NextConfig = {
             key: 'Content-Security-Policy',
             value: [
               `default-src 'self'`,
-              // Next.js inline scripts + Supabase auth
+              // Next.js inline scripts
               `script-src 'self' 'unsafe-inline' 'unsafe-eval'`,
               // Tailwind inline styles
               `style-src 'self' 'unsafe-inline'`,
-              // Images: self + Supabase storage
-              `img-src 'self' data: blob: ${SUPABASE_URL}`,
+              // Images: self only (documents are served by the app)
+              `img-src 'self' data: blob:`,
               // Fonts: self only
               `font-src 'self'`,
-              // API calls: self + Supabase
-              `connect-src 'self' ${SUPABASE_URL} wss://*.supabase.co`,
+              // API calls: self only
+              `connect-src 'self'`,
               // PDF blobs opened in new tab
               `frame-src 'self' blob:`,
               `object-src 'none'`,

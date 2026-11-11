@@ -13,7 +13,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createAdminClient } from '@/lib/supabase/admin';
+import { rpcRows } from '@/lib/db';
 import { notifyOutcome, notifyReminder } from '@/lib/notify';
 import { generateAndStorePdf } from '@/lib/generate-pdf';
 
@@ -30,15 +30,20 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
   }
 
-  const admin = createAdminClient();
-
-  const { data: closed, error: closeError } = await admin.rpc('vote_close_expired');
+  const { data: closed, error: closeError } = await rpcRows<{
+    r_motion_id: string;
+    r_outcome: string;
+    r_reason: string | null;
+  }>('vote_close_expired');
   if (closeError) {
     console.error('[cron] vote_close_expired failed:', closeError);
     return NextResponse.json({ ok: false, error: closeError.message }, { status: 500 });
   }
 
-  const { data: reminders, error: reminderError } = await admin.rpc('vote_claim_reminders');
+  const { data: reminders, error: reminderError } = await rpcRows<{
+    r_motion_id: string;
+    r_kind: string;
+  }>('vote_claim_reminders');
   if (reminderError) {
     console.error('[cron] vote_claim_reminders failed:', reminderError);
     return NextResponse.json({ ok: false, error: reminderError.message }, { status: 500 });

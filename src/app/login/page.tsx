@@ -1,4 +1,6 @@
+import { redirect } from 'next/navigation';
 import { Monogram } from '@/components/board/ui';
+import { getCurrentMember } from '@/lib/dal';
 import { safeNext } from '@/lib/safe-next';
 import { LoginForm } from './login-form';
 
@@ -21,6 +23,9 @@ export default async function LoginPage({
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
   const params = await searchParams;
+  const next = safeNext(one(params.next));
+  // Already signed in (say, from the home-screen app): go straight in.
+  if (await getCurrentMember()) redirect(next);
   const noticeKey = one(params.notice) ?? one(params.error);
   const notice = noticeKey ? (NOTICES[noticeKey] ?? null) : null;
 
@@ -34,7 +39,7 @@ export default async function LoginPage({
             <p className="text-body text-ink-3">Harrison Faith Church</p>
           </div>
         </div>
-        <LoginForm next={safeNext(one(params.next))} notice={notice} />
+        <LoginForm next={next} notice={notice} />
       </div>
     </main>
   );

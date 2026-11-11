@@ -1,7 +1,7 @@
 // Shared vocabulary for the board's voting rules. Pure functions only, so the
 // same labels and calculations are used by server pages, client components,
 // emails and tests. The rules themselves are enforced in the database
-// (supabase/migrations/015_unanimous_voting.sql); this file describes them.
+// (netlify/database/migrations/0001_baseline.sql); this file describes them.
 
 export type Role = 'chair' | 'secretary' | 'member';
 
@@ -233,7 +233,14 @@ export const VOTING_PERIOD_CHOICES = [3, 5, 7] as const;
 export const DEFAULT_VOTING_PERIOD = 5;
 
 export const MAX_ATTACHMENTS = 6;
-export const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
-/** File picker filter; the server and the storage bucket enforce the same list. */
+/**
+ * Netlify serves a document through a function, and a streamed function
+ * response is capped at 20 MB, so documents are capped there too.
+ */
+export const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+export const MAX_ATTACHMENT_LABEL = '20 MB';
+/** Uploads are sent in pieces under Netlify's 6 MB request limit. */
+export const UPLOAD_CHUNK_BYTES = 4 * 1024 * 1024;
+/** File picker filter; the server enforces the same list. */
 export const ACCEPTED_FILE_TYPES =
   '.pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.gif,.webp,.txt,.md,application/pdf,image/*';

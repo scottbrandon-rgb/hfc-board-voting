@@ -14,6 +14,44 @@ export interface Message {
 }
 
 /**
+ * Deploy previews and branch deploys run on a copy of the real board, so
+ * their notices are logged instead of emailed. (Sign-in codes are still sent:
+ * a tester needs one to sign in.)
+ */
+const IS_PREVIEW =
+  !!process.env.DEPLOY_CONTEXT &&
+  process.env.DEPLOY_CONTEXT !== 'production' &&
+  process.env.DEPLOY_CONTEXT !== 'dev';
+
+/**
+ * Sends one message to one address and says whether it was accepted. Used for
+ * sign-in codes, where the member is waiting for it.
+ */
+export async function sendOne(address: string, message: Message): Promise<boolean> {
+  if (!resend) {
+    console.log(`[email] RESEND_API_KEY not set — would send "${message.subject}"`);
+    return false;
+  }
+  try {
+    const { error } = await resend.emails.send({
+      from: FROM,
+      to: [address],
+      subject: message.subject,
+      html: message.html,
+      text: message.text,
+    });
+    if (error) {
+      console.error(`[email] "${message.subject}" failed:`, error);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error(`[email] "${message.subject}" failed:`, err);
+    return false;
+  }
+}
+
+/**
  * Sends one email per recipient (nobody sees anyone else's address, and one
  * bad address cannot sink the rest). Resend reports failures by returning an
  * error rather than throwing, so both paths are logged.
@@ -21,6 +59,10 @@ export interface Message {
 export async function sendEach(recipients: readonly string[], message: Message): Promise<void> {
   const to = [...new Set(recipients.map((r) => r.trim().toLowerCase()).filter(Boolean))];
   if (to.length === 0) return;
+  if (IS_PREVIEW) {
+    console.log(`[email] preview deploy — not sending "${message.subject}" to ${to.length}`);
+    return;
+  }
   if (!resend) {
     console.log(`[email] RESEND_API_KEY not set — would send "${message.subject}" to ${to.length}`);
     return;
@@ -123,6 +165,18 @@ ${
     .join('\n');
 
   return { html, text };
+}
+
+/** The sign-in code email. The code leads the subject so phones show it. */
+export function signInCodeMessage(code: string): Message {
+  const { html, text } = render({
+    title: 'Your sign-in code',
+    paragraphs: [
+      `Enter this code on the board site to sign in: ${code}`,
+      'It works for one hour. If you did not ask for it, you can ignore this email.',
+    ],
+  });
+  return { subject: `${code} is your Deacon Board sign-in code`, html, text };
 }
 
 export function motionUrl(motionId: string): string {

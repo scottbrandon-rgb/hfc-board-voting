@@ -14,11 +14,3 @@ const twMerge = extendTailwindMerge({
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
-
-/**
- * Escapes LIKE wildcards so a case-insensitive email match (`ilike`) is an
- * exact match: `j_hn@x.org` must not match `john@x.org`.
- */
-export function escapeLike(value: string): string {
-  return value.replace(/[\\%_]/g, (c) => `\\${c}`);
-}
