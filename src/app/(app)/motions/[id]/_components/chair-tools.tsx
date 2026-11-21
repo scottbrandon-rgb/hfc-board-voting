@@ -79,8 +79,8 @@ function ReferForm({
       <div role="status" className="flex flex-col gap-4">
         <p className="text-title font-bold">Referred to the meeting</p>
         <p className="text-body text-ink-2">
-          The board has been notified. It&apos;s on the meeting agenda with your note and the votes
-          cast so far.
+          The board has been notified by email and push notification. It&apos;s on the meeting
+          agenda with your note and the votes cast so far.
         </p>
         <Button size="lg" onClick={onDone}>
           Done
@@ -96,7 +96,7 @@ function ReferForm({
         <ul className="text-small text-ink-2 flex list-disc flex-col gap-1.5 pl-5">
           <li>Voting closes now. Votes can no longer be changed.</li>
           {voteSummary && <li>{voteSummary} stay in the record.</li>}
-          <li>Every board member is notified, with your note.</li>
+          <li>Every board member is notified (email and push), with your note.</li>
           <li>It&apos;s added to the agenda for {meetingLabel}.</li>
         </ul>
       </div>
@@ -172,7 +172,9 @@ function ExtendForm({ motionId, onDone }: { motionId: string; onDone: () => void
     return (
       <div role="status" className="flex flex-col gap-4">
         <p className="text-title font-bold">Deadline extended</p>
-        <p className="text-body text-ink-2">Voting members have been emailed the new deadline.</p>
+        <p className="text-body text-ink-2">
+          Voting members have been sent the new deadline by email and push notification.
+        </p>
         <Button size="lg" onClick={onDone}>
           Done
         </Button>

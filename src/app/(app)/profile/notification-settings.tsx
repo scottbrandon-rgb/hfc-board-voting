@@ -40,8 +40,9 @@ function Switch({ checked, disabled }: { checked: boolean; disabled?: boolean })
 }
 
 /**
- * Email preferences. Emails asking for the member's vote, and reminders before
- * a deadline, always go out: a unanimous vote depends on every member.
+ * Notification preferences, for email and push alike. Notices asking for the
+ * member's vote, and reminders before a deadline, always go out: a unanimous
+ * vote depends on every member.
  */
 export function NotificationSettings({ initial }: { initial: Record<NotificationPref, boolean> }) {
   const [values, setValues] = useState(initial);
@@ -67,7 +68,7 @@ export function NotificationSettings({ initial }: { initial: Record<Notification
         <span className="flex flex-1 flex-col">
           <span className="text-body font-semibold">Votes needing me and reminders</span>
           <span className="text-small text-ink-2">
-            Always on, so no vote waits on a missed email
+            Always on, so no vote waits on a missed notice
           </span>
         </span>
         <Switch checked disabled />

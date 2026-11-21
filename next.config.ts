@@ -1,7 +1,7 @@
 import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ['@react-pdf/renderer'],
+  serverExternalPackages: ['@react-pdf/renderer', 'web-push'],
   // Netlify's CONTEXT (production, deploy-preview, branch-deploy) is known at
   // build time only; fixing it into the build lets previews keep their own
   // file storage and skip emailing the board (src/lib/storage.ts, email.ts).
@@ -19,6 +19,12 @@ const nextConfig: NextConfig = {
   // ── Security headers ──────────────────────────────────────────────────────
   async headers() {
     return [
+      {
+        // The push service worker must always be fetched fresh, so a fix
+        // reaches every phone on its next visit.
+        source: '/sw.js',
+        headers: [{ key: 'Cache-Control', value: 'no-cache, no-store, must-revalidate' }],
+      },
       {
         source: '/(.*)',
         headers: [

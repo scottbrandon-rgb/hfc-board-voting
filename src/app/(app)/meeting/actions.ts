@@ -78,7 +78,10 @@ export async function ratifyMotions(
     }
   });
   refresh();
-  return { status: 'success', message: `${count ?? ids.length} ratified.` };
+  return {
+    status: 'success',
+    message: `${count ?? ids.length} ratified. The board is being notified by email and push notification.`,
+  };
 }
 
 export async function recordOutcome(

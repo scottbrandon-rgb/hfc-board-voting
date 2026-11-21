@@ -42,6 +42,9 @@ Production and Deploy Previews:
 | `RESEND_API_KEY`                 | Sends sign-in codes and notices                                                   |
 | `RESEND_FROM_EMAIL`              | `board@harrisonfaith.org`                                                         |
 | `APP_URL`, `NEXT_PUBLIC_APP_URL` | `https://board.harrisonfaith.church`                                              |
+| `VAPID_PUBLIC_KEY`               | Push notifications. Run `npx web-push generate-vapid-keys` once                   |
+| `VAPID_PRIVATE_KEY`              | The matching private key. Keep it secret; changing it unsubscribes every device   |
+| `VAPID_SUBJECT`                  | optional, default `mailto:` + `RESEND_FROM_EMAIL`                                 |
 | `CRON_SECRET`                    | `openssl rand -hex 32`; protects the scheduled job, health details and the import |
 | `TIMEZONE`                       | optional, default `America/Chicago`                                               |
 
@@ -108,3 +111,6 @@ tables, the number of active members and both file stores.
       meeting; the document opens and the PDF downloads
 - [ ] Scheduled job logging `ok: true` every 15 minutes
 - [ ] Each member signs in once on their phone (and adds it to the Home Screen)
+- [ ] Each member turns on Profile → This device → Push notifications (iPhone:
+      from the Home Screen app). They get a "Push notifications are on" notice
+- [ ] `/api/health` (detailed view) shows `push: set`

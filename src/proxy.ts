@@ -45,9 +45,9 @@ export const config = {
   matcher: [
     // Everything except: Next.js internals and static files; the scheduled-jobs,
     // health and one-time migration endpoints (they authenticate themselves
-    // with CRON_SECRET, and callers have no session); and the app manifest and
-    // icons, which phones fetch without the member's sign-in when adding the
+    // with CRON_SECRET, and callers have no session); and the app manifest,
+    // service worker and icons, which phones fetch without the member's sign-in when adding the
     // site to the home screen.
-    '/((?!_next/static|_next/image|api/cron|api/health|api/migrate|manifest\\.webmanifest|icon|apple-icon|favicon\\.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)',
+    '/((?!_next/static|_next/image|api/cron|api/health|api/migrate|manifest\\.webmanifest|sw\\.js|icon|apple-icon|favicon\\.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)',
   ],
 };

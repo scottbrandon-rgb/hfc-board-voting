@@ -6,6 +6,8 @@ import { ROLE_LABELS, isVotingRole } from '@/lib/rules';
 import { Card, PageTitle, SectionHeading } from '@/components/board/ui';
 import { MobileBrand } from '@/components/board/nav';
 import { InstallRow } from '@/components/board/install';
+import { PushRow } from '@/components/board/push-row';
+import { vapidPublicKey } from '@/lib/push';
 import { EditNameForm } from './edit-name-form';
 import { NotificationSettings } from './notification-settings';
 
@@ -13,6 +15,7 @@ export const metadata = { title: 'Profile' };
 
 export default async function ProfilePage() {
   const member = await requireMember();
+  const pushKey = vapidPublicKey();
   const prefs = await queryOne<{
     notify_new_motions: boolean;
     notify_comments: boolean;
@@ -61,7 +64,7 @@ export default async function ProfilePage() {
       )}
 
       <section aria-labelledby="email-settings" className="flex flex-col gap-3">
-        <SectionHeading id="email-settings">Email me about</SectionHeading>
+        <SectionHeading id="email-settings">Notify me about</SectionHeading>
         <Card className="py-1">
           <NotificationSettings
             initial={{
@@ -75,6 +78,7 @@ export default async function ProfilePage() {
 
       <section aria-labelledby="this-device" className="flex flex-col gap-3">
         <SectionHeading id="this-device">This device</SectionHeading>
+        {pushKey && <PushRow publicKey={pushKey} />}
         <InstallRow />
       </section>
 

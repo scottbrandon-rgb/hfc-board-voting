@@ -11,6 +11,7 @@ import {
   notifyCall,
   notifyComment,
   notifyExtended,
+  notifyMoved,
   notifyOutcome,
   notifyPublished,
   notifyVotingOpened,
@@ -113,6 +114,7 @@ export async function moveMotion(motionId: string): Promise<ActionState> {
     ...(await requestContext()),
   });
   if (error) return { status: 'error', message: friendlyError(error) };
+  after(() => notifyMoved(motionId));
   refresh(motionId);
   return { status: 'success' };
 }
@@ -272,10 +274,10 @@ export async function sendCall(motionId: string): Promise<ActionState> {
     status: 'success',
     message:
       status === 'voting'
-        ? 'Reminder sent.'
+        ? 'Reminder sent by email and push notification.'
         : status === 'moved'
-          ? 'Call for a second sent.'
-          : 'Call for a motion sent.',
+          ? 'Call for a second sent by email and push notification.'
+          : 'Call for a motion sent by email and push notification.',
   };
 }
 

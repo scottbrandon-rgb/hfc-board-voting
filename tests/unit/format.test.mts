@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   boardLocalToIso,
+  clip,
   closingWithin,
   formatBytes,
   formatPlainDate,
@@ -73,4 +74,11 @@ test('class merging keeps text colors alongside the board text sizes', () => {
   assert.equal(cn('text-caption', 'text-ink-2'), 'text-caption text-ink-2');
   assert.equal(cn('text-small', 'text-body'), 'text-body');
   assert.equal(cn('text-ink', 'text-white'), 'text-white');
+});
+
+test('clip tidies whitespace and shortens long lines', () => {
+  assert.equal(clip('  HFC-2026-001 \n Roof   repair '), 'HFC-2026-001 Roof repair');
+  assert.equal(clip('x'.repeat(200)).length, 120);
+  assert.ok(clip('x'.repeat(200)).endsWith('…'));
+  assert.equal(clip('short', 10), 'short');
 });
