@@ -13,6 +13,8 @@ import { fileExists, storeName, type Bucket } from '@/lib/storage';
 export const dynamic = 'force-dynamic';
 
 const REQUIRED_ENV = ['RESEND_API_KEY', 'RESEND_FROM_EMAIL', 'APP_URL', 'CRON_SECRET'];
+// Push notifications are optional: reported, but never fail the check.
+const PUSH_ENV = ['VAPID_PUBLIC_KEY', 'VAPID_PRIVATE_KEY'];
 
 function message(err: unknown): string {
   if (err && typeof err === 'object' && 'message' in err) return String(err.message);
@@ -31,19 +33,28 @@ export async function GET(request: NextRequest) {
     if (process.env[key]) checks[key] = 'set';
     else fail(key, 'missing');
   }
+  checks.push = PUSH_ENV.every((key) => process.env[key]) ? 'set' : 'not configured';
   checks.deploy_context = process.env.DEPLOY_CONTEXT ?? 'unknown';
 
   try {
-    const row = await queryOne<{ members: number; rules: boolean; sign_in: boolean }>(
+    const row = await queryOne<{
+      members: number;
+      rules: boolean;
+      sign_in: boolean;
+      push: boolean;
+    }>(
       `select (select count(*)::int from public.members where is_active) as members,
               to_regprocedure('public.vote_cast_ballot(uuid,uuid,text,text,text,inet,text)') is not null as rules,
-              to_regclass('private.sessions') is not null as sign_in`,
+              to_regclass('private.sessions') is not null as sign_in,
+              to_regclass('private.push_subscriptions') is not null as push`,
     );
     checks.db = 'ok';
     if (row?.rules) checks.voting_rules = 'ok';
     else fail('voting_rules', 'missing: the baseline migration has not been applied');
     if (row?.sign_in) checks.sign_in_tables = 'ok';
     else fail('sign_in_tables', 'missing: migration 0002_sign_in has not been applied');
+    if (row?.push) checks.push_table = 'ok';
+    else fail('push_table', 'missing: migration 0003_push_subscriptions has not been applied');
     // An empty board means the Supabase data has not been imported yet.
     if ((row?.members ?? 0) > 0) checks.active_members = String(row?.members);
     else fail('active_members', 'none: import the board data (see MIGRATION.md)');

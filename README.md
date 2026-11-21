@@ -42,8 +42,19 @@ append-only. `src/lib/rules.ts` holds the shared labels and calculations.
 - **Files:** `src/lib/storage.ts` (Netlify Blobs; private, read only through
   `/files/...` after the session check). Uploads go in 4 MB pieces through
   `/api/attachments/upload`; documents are limited to 20 MB.
+- **Push notifications:** `src/lib/push.ts`, `public/sw.js`. Every notice in
+  `src/lib/notify.ts` is sent as an email and as a push notification to the
+  same people (a member's push reaches the devices they switched on under
+  Profile → This device). Nobody composes or triggers them: they fire from the
+  same events as the emails. A member moving a motion also sends a push (and no
+  email) so the others know it needs a second. Each batch is logged
+  (`[push] sending …`) and recorded as a `push_sent` row in the audit log; the
+  chair's call, referral, extension and ratification screens say it was sent.
+  Needs `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY`; without them nothing is
+  pushed and Profile hides the switch. On iPhone it works only from the Home
+  Screen app (iOS 16.4+).
 - **Previews:** deploy previews get their own copy of the database and their
-  own file stores, and log notices instead of emailing the board. Sign-in
+  own file stores, and log notices instead of emailing or pushing to the board. Sign-in
   codes are still sent.
 
 ## Development

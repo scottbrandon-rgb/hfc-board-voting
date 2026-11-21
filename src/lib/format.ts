@@ -147,3 +147,9 @@ export function isoToBoardLocal(iso: string): string {
   const shifted = new Date(at.getTime() + tzOffsetMinutes(at) * 60_000);
   return shifted.toISOString().slice(0, 16);
 }
+
+/** Keeps a notification line short enough for a lock screen, ending in an ellipsis if cut. */
+export function clip(text: string, max = 120): string {
+  const t = text.replace(/\s+/g, ' ').trim();
+  return t.length > max ? `${t.slice(0, max - 1)}…` : t;
+}

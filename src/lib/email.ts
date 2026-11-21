@@ -18,7 +18,7 @@ export interface Message {
  * their notices are logged instead of emailed. (Sign-in codes are still sent:
  * a tester needs one to sign in.)
  */
-const IS_PREVIEW =
+export const IS_PREVIEW =
   !!process.env.DEPLOY_CONTEXT &&
   process.env.DEPLOY_CONTEXT !== 'production' &&
   process.env.DEPLOY_CONTEXT !== 'dev';
